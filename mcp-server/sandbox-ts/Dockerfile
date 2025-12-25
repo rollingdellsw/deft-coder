@@ -37,6 +37,7 @@ RUN npm install
 # Copy the server source code
 COPY src ./src
 COPY tsconfig.json ./
+COPY build.js ./
 
 # Compile the TypeScript server
 RUN npm run build

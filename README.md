@@ -58,8 +58,13 @@ LLMs are trained on millions of Git diffs. Deft™ speaks their native language.
 **Standalone CLI** — Apply patches from **ANY!** LLM (ChatGPT, Claude, Gemini), just ask: "give me a single standard unified diff mode patch", then:
 
 ```bash
+# Confirm you have Node.js >= 18
+$ node --version
 # Install globally via npm (direct download)
-$ npm install -g https://github.com/rollingdellsw/deft-coder/raw/main/release/deft-1.0.2.tgz
+$ git clone https://github.com/rollingdellsw/deft-coder.git
+$ npm install -g deft-coder/release/linux/deft-1.0.2.tgz
+# Build the docker image used for the sandbox MCP server
+$ docker build -t deft-ts-sandbox deft-coder/mcp-server/sandbox-ts
 
 # Deft is a full-featured CLI tool
 $ deft --help
@@ -132,7 +137,7 @@ Deft™ implements the [Anthropic Claude Skills specification](https://github.co
 
 This agent supports adding existing MCP servers. Simply add an MCP server like [Chrome Devtool MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/docs/tool-reference.md) to the agent [configuration file](./configs/config.openai.json).
 
-The tools from the newly added MCP server will not be visible to the LLM by default; they require a new [SKILL.md](https://www.google.com/search?q=packages/deft/skills/chrome-devtools/SKILL.md) for the LLM to load them on-demand.
+The tools from the newly added MCP server will not be visible to the LLM by default; they require a new [SKILL.md](https://github.com/rollingdellsw/deft-coder/blob/main/skills/chrome-devtools/SKILL.md) for the LLM to load them on-demand.
 
 ---
 

@@ -29,9 +29,9 @@ If you use the Software to write, modify, or debug code for which you are paid, 
 
 ## 3. COMPONENT LICENSING EXCEPTIONS
 
-### 3.1 Neovim Plugin and MCP Servers(MIT License)
+### 3.1 Neovim Plugin, Skills and MCP Servers(MIT License)
 
-Notwithstanding the terms of this EULA, files located specifically within the `nvim-plugin/` and `mcp-server` directory of this distribution are licensed under the MIT License. You are free to modify, redistribute, and use these specific Lua files under the terms of the MIT License to facilitate editor integration.
+Notwithstanding the terms of this EULA, files located specifically within the `nvim-plugin/`, `configs`, `skills`, and `mcp-server` directory of this distribution are licensed under the MIT License. You are free to modify, redistribute, and use these specific Lua files under the terms of the MIT License to facilitate editor integration.
 
 ### 3.2 Third-Party Components
 
@@ -58,7 +58,7 @@ With the exception of the files detailed in Section 3.1, you may not:
 
 ## 6. OWNERSHIP
 
-The Software is licensed, not sold. [YOUR LLC NAME] retains all ownership, title, copyright, and intellectual property rights in and to the Software, excluding the third-party components and the MIT-licensed plugin files.
+The Software is licensed, not sold. Rollingdell Software Service, LLC retains all ownership, title, copyright, and intellectual property rights in and to the Software, excluding the third-party components and the MIT-licensed plugin files.
 
 ## 7. LIMITATION OF LIABILITY
 
