@@ -1,0 +1,272 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://deft.dev/ipc-protocol.json",
+  "title": "Deft IPC Protocol",
+  "description": "Newline-delimited JSON messages over TCP socket",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "number"
+        },
+        "type": {
+          "type": "string",
+          "const": "show_diff"
+        },
+        "filepath": {
+          "type": "string"
+        },
+        "hunkContent": {
+          "type": "string"
+        },
+        "hunkIndex": {
+          "type": "number"
+        },
+        "totalHunks": {
+          "type": "number"
+        },
+        "diffType": {
+          "type": "string",
+          "enum": [
+            "hunk",
+            "write"
+          ]
+        },
+        "existingContent": {
+          "type": "string"
+        },
+        "newContent": {
+          "type": "string"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "filepath": {
+                "type": "string"
+              },
+              "existingContent": {
+                "type": "string"
+              },
+              "newContent": {
+                "type": "string"
+              },
+              "hunkCount": {
+                "type": "number"
+              },
+              "isNewFile": {
+                "type": "boolean"
+              },
+              "patchHunks": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "hunkIndex": {
+                      "type": "number"
+                    },
+                    "oldStart": {
+                      "type": "number"
+                    },
+                    "oldCount": {
+                      "type": "number"
+                    },
+                    "newStart": {
+                      "type": "number"
+                    },
+                    "newCount": {
+                      "type": "number"
+                    },
+                    "header": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "hunkIndex",
+                    "oldStart",
+                    "oldCount",
+                    "newStart",
+                    "newCount",
+                    "header"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "filepath",
+              "existingContent",
+              "newContent",
+              "hunkCount",
+              "isNewFile"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "isMultiFile": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "timestamp",
+        "type",
+        "filepath",
+        "hunkContent",
+        "hunkIndex",
+        "totalHunks",
+        "diffType",
+        "requestId"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "number"
+        },
+        "type": {
+          "type": "string",
+          "const": "confirmation_response"
+        },
+        "requestId": {
+          "type": "string"
+        },
+        "decision": {
+          "type": "string",
+          "enum": [
+            "accept",
+            "reject",
+            "accept-all",
+            "reject-all",
+            "edited"
+          ]
+        },
+        "rejectionMessage": {
+          "type": "string"
+        },
+        "editedContent": {
+          "type": "string"
+        },
+        "fileDecisions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "filepath": {
+                "type": "string"
+              },
+              "decision": {
+                "type": "string",
+                "enum": [
+                  "accept",
+                  "reject",
+                  "edited",
+                  "partial"
+                ]
+              },
+              "rejectionMessage": {
+                "type": "string"
+              },
+              "editedContent": {
+                "type": "string"
+              },
+              "hunkDecisions": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "properties": {
+                    "hunkIndex": {
+                      "type": "number"
+                    },
+                    "decision": {
+                      "type": "string",
+                      "enum": [
+                        "accept",
+                        "reject"
+                      ]
+                    },
+                    "message": {
+                      "type": "string"
+                    }
+                  },
+                  "required": [
+                    "hunkIndex",
+                    "decision"
+                  ],
+                  "additionalProperties": false
+                }
+              }
+            },
+            "required": [
+              "filepath",
+              "decision"
+            ],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": [
+        "id",
+        "timestamp",
+        "type",
+        "requestId",
+        "decision"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "timestamp": {
+          "type": "number"
+        },
+        "type": {
+          "type": "string",
+          "const": "code_query"
+        },
+        "filepath": {
+          "type": "string"
+        },
+        "selection": {
+          "type": "string"
+        },
+        "query": {
+          "type": "string"
+        },
+        "lineStart": {
+          "type": "number"
+        },
+        "lineEnd": {
+          "type": "number"
+        }
+      },
+      "required": [
+        "id",
+        "timestamp",
+        "type",
+        "filepath",
+        "selection",
+        "query",
+        "lineStart",
+        "lineEnd"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

@@ -1,0 +1,135 @@
+{
+  "llm": {
+    "provider": "openrouter",
+    "apiKey": "${OPENROUTER_API_KEY}",
+    "model": "deepseek/deepseek-v3.2",
+    "contextWindow": 128000,
+    "comment": "Reminder LLM when remaining contextWindow is less than 10000",
+    "baseUrl": "https://openrouter.ai/api/v1",
+    "temperature": 0.0,
+    "maxTokens": 32768,
+    "thinking": {
+      "enabled": true,
+      "budgetLevel": "high",
+      "fallbackToPrompt": false,
+      "comment": "Grok uses prompt-based <think> blocks; set fallbackToPrompt: false for OpenAI o1/o3/gpt-5 models"
+    }
+  },
+  "executor": {
+    "enabled": true,
+    "model": "deepseek/deepseek-v3.2",
+    "timeoutMs": 180000,
+    "maxIterations": 20
+  },
+  "mcpServers": [
+    {
+      "name": "filesystem",
+      "type": "local",
+      "command": "node",
+      "args": [
+        "mcp-server/fs/dist/index.js"
+      ],
+      "env": {
+        "WORKING_DIR": "."
+      }
+    },
+    {
+      "name": "sandbox",
+      "type": "docker",
+      "imageName": "ts-sandbox",
+      "containerName": "deft-ts-sandbox",
+      "portMapping": "3000:3000",
+      "endpoint": "${SANDBOX_ENDPOINT:-http://localhost:3000}",
+      "comment": "For Windows/Mac: set SANDBOX_ENDPOINT env var, follow instructions in docs/configuration.md"
+    },
+    {
+      "name": "sandbox_browser",
+      "type": "docker",
+      "imageName": "ts-sandbox",
+      "containerName": "deft-ts-sandbox",
+      "portMapping": "3000:3000",
+      "endpoint": "${SANDBOX_ENDPOINT:-http://localhost:3000}",
+      "comment": "For Windows/Mac: set SANDBOX_ENDPOINT env var, follow instructions in docs/configuration.md"
+    },
+    {
+      "name": "git",
+      "type": "local",
+      "command": "node",
+      "args": [
+        "mcp-server/git/dist/index.js"
+      ],
+      "env": {
+        "WORKING_DIR": "."
+      }
+    },
+    {
+      "name": "search",
+      "type": "local",
+      "command": "node",
+      "args": [
+        "mcp-server/search/dist/index.js"
+      ],
+      "env": {
+        "WORKING_DIR": "."
+      }
+    },
+    {
+      "name": "chrome-devtools",
+      "type": "local",
+      "command": "npx",
+      "args": [
+        "chrome-devtools-mcp@latest",
+        "--browserUrl=http://localhost:9222"
+      ],
+      "comment": "Chrome DevTools Protocol - provides comprehensive browser automation"
+    }
+  ],
+  "tools": {
+    "patch": {
+      "autoHeal": false,
+      "comment": "Enable it if you want the agent to call another new LLM session to heal the patch on failure"
+    },
+    "whitelist": [
+      "read_file",
+      "list_files",
+      "search_files",
+      "search_code",
+      "get_file_structure",
+      "get_lsp_diagnostics",
+      "git_command",
+      "sandbox_ts",
+      "sandbox_browser",
+      "mgrep",
+      "run_subtask",
+      "run_cmd"
+    ]
+  },
+  "agent": {
+    "workingDirectory": ".",
+    "sessionDirectory": "${HOME}/.local/deft/sessions",
+    "editor": "${EDITOR:-vim}",
+    "ipc": {
+      "enabled": true
+    },
+    "systemPrompt": "You are a coding assistant with file system access via tools.\n\nAvailable tools allow you to read, write, list, and search files.\n\nGuidelines:\n1. Always read files before modifying them\n2. Make focused, targeted changes\n3. Explain your reasoning clearly\n4. Remember that write operations require user confirmation\n\nTools execute sequentially, not in parallel."
+  },
+  "skills": {
+    "sources": [
+      {
+        "type": "local",
+        "location": "~/.config/deft/skills"
+      },
+      {
+        "type": "local",
+        "location": "./skills"
+      }
+    ],
+    "preload": [
+      "task-delegation",
+      "code-navigation",
+      "filesystem",
+      "git-scm"
+    ],
+    "comment": "Preload skills make their tools available immediately without LLM calling read_skill"
+  }
+}

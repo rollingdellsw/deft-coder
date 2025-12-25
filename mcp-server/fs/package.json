@@ -1,0 +1,26 @@
+{
+  "name": "fs",
+  "version": "1.0.0",
+  "description": "Filesystem MCP Server",
+  "main": "dist/index.js",
+  "bin": {
+    "fs": "./dist/index.js"
+  },
+  "scripts": {
+    "lint": "eslint src --ext .ts --cache",
+    "lint:fix": "eslint src --ext .ts --cache --fix",
+    "type-check": "tsc --noEmit",
+    "build": "tsc --noEmit && node build.js",
+    "dev": "tsx src/index.ts",
+    "start": "node dist/index.js"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.6",
+    "@typescript-eslint/eslint-plugin": "^6.21.0",
+    "@typescript-eslint/parser": "^6.21.0",
+    "esbuild": "^0.27.1",
+    "eslint": "^8.57.1",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  }
+}
