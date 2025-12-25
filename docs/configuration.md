@@ -16,6 +16,22 @@ Works out of the box. No API keys, no config files.
 
 ### Full Agent
 
+#### Runtime Dependencies
+
+The agent relies on a Docker image to run a sandboxed TypeScript environment. To use its full features, you need to install the Docker runtime (you can disable the sandbox MCP server in your config if you do not need this).
+
+The agent also relies on ripgrep and LSP servers to perform code searches. Please ensure they are installed on your system:
+
+```bash
+$ rg --version
+ripgrep 13.0.0
+$ typescript-language-server --version
+5.1.3
+```
+
+#### Edit the default configuration
+
+
 ```bash
 nvim -p ~/.config/deft/config.json
 ```
