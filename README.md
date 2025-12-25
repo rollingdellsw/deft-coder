@@ -81,6 +81,16 @@ Options:
                           (xhigh, high, medium, low, minimal, none)
   --help, -h             Show this help message
 
+# Commands inside Deft session:
+Available commands:                                                                                                                                                                               │
+  /save <n>, /s           - Save current session with name                                                                                                                                        │
+  /load [id], /l          - Load session (interactive or by ID)                                                                                                                                   │
+  /branch, /b             - Branch from a selected message                                                                                                                                        │
+  /config [list|switch]   - List/switch model at runtime                                                                                                                                          │
+  /attach <pattern>       - Attach files (supports globs)                                                                                                                                         │
+  /detach <pattern>       - Detach files                                                                                                                                                          │
+  /list-attachments, /la  - List attached files
+  /exit, /quit, /q        - Exit the application
 
 # Use the patch command like a standard patch command to apply LLM generated patch
 $ deft patch ./llm-suggestions.patch
