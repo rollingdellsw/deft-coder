@@ -94,14 +94,9 @@ LLM providers' web UIs typically deliver the best results for coding tasks. Comb
 
 Besides being a standalone CLI, Deft™ can also work within Neovim as a plugin. In both modes, it provides per-hunk interactive change review capability.
 
-1. Open the file list selector to choose a file to review:
-   ![Select file to review](docs/nvim-diff-review-ui-file-selector.png "File Selector")
-2. Review multiple hunks in a single file:
-   ![Review a file](docs/nvim-diff-review-ui-single-file.png "Change Review")
+![Interactive Review Demo](docs/demo.gif "Deft Neovim Workflow")
 
 When working with Neovim, select any code, press `<leader>ca`, ask questions or request changes, then review in the native diff view.
-
-![Select file content to chat](docs/nvim-select-code-to-chat.png "Chat With Selection")
 
 → [Neovim Integration Guide](./docs/neovim-integration.md)
 
