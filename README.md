@@ -130,7 +130,7 @@ Deft™ implements the [Anthropic Claude Skills specification](https://github.co
 
 #### 3.4. **MCP for Tool Extension**
 
-This agent supports adding existing MCP servers. Simply add an MCP server like [Chrome Devtool MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/docs/tool-reference.md) to the agent [configuration file](packages/deft/configs/config.openai.config).
+This agent supports adding existing MCP servers. Simply add an MCP server like [Chrome Devtool MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/docs/tool-reference.md) to the agent [configuration file](./configs/config.openai.json).
 
 The tools from the newly added MCP server will not be visible to the LLM by default; they require a new [SKILL.md](https://www.google.com/search?q=packages/deft/skills/chrome-devtools/SKILL.md) for the LLM to load them on-demand.
 
