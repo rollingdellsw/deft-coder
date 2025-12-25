@@ -29,9 +29,9 @@ If you use the Software to write, modify, or debug code for which you are paid, 
 
 ## 3. COMPONENT LICENSING EXCEPTIONS
 
-### 3.1 Neovim Plugin (MIT License)
+### 3.1 Neovim Plugin and MCP Servers(MIT License)
 
-Notwithstanding the terms of this EULA, files located specifically within the `nvim-plugin/` directory of this distribution are licensed under the MIT License. You are free to modify, redistribute, and use these specific Lua files under the terms of the MIT License to facilitate editor integration.
+Notwithstanding the terms of this EULA, files located specifically within the `nvim-plugin/` and `mcp-server` directory of this distribution are licensed under the MIT License. You are free to modify, redistribute, and use these specific Lua files under the terms of the MIT License to facilitate editor integration.
 
 ### 3.2 Third-Party Components
 

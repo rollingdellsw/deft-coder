@@ -133,8 +133,8 @@ ARE DISCLAIMED.
 
 ---
 
-## Neovim Plugin
+## Neovim Plugin and MCP Servers
 
-Files in the `nvim-plugin/` directory are licensed under the MIT License and may include inspiration or patterns from the broader Neovim plugin ecosystem.
+Files in the `nvim-plugin/` and `mcp-server` directory are licensed under the MIT License and may include inspiration or patterns from the broader Neovim plugin ecosystem.
 
 ---
