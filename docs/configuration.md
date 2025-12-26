@@ -29,8 +29,9 @@ $ typescript-language-server --version
 5.1.3
 ```
 
-#### Edit the default configuration
+For **Windows and Mac** users, please comment out the sandbox_ts and sandbox_browser MCP servers in the configurations, as they depend on Docker to run.
 
+#### Edit the default configuration
 
 ```bash
 nvim -p ~/.config/deft/config.json

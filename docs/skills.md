@@ -140,10 +140,10 @@ Then run:
 ```
 use skill chrome-devtools to navigate to https://example.com and run document.title using evaluate_script
 ```
+
 **Expect:** Skill loads, Chrome navigates to example.com, outputs `document.title: "Example Domain"`
 
 ---
-
 
 ## Two Types of Skills
 
