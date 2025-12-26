@@ -135,7 +135,7 @@ $ node --version
 
 # Clone and install globally
 $ git clone https://github.com/rollingdellsw/deft-coder.git
-$ npm install -g deft-coder/release/deft-1.0.2.tgz
+$ npm install -g deft-coder/release/deft-1.0.3.tgz
 
 # Build the Docker image for the sandbox MCP server (Linux only)
 $ docker build -t ts-sandbox deft-coder/mcp-server/sandbox-ts

@@ -29,7 +29,40 @@ $ typescript-language-server --version
 5.1.3
 ```
 
-For **Windows and Mac** users, please comment out the sandbox_ts and sandbox_browser MCP servers in the configurations, as they depend on Docker to run.
+### Setup sandbox_ts docker for Windows and Mac users
+
+For **Windows and Mac** users, please setup the sandbox_ts docker (see README.md for how to build it) in a Linux instance (WSL2 for Windows or a remote Linux for Mac).
+
+```bash
+docker run -d --rm --name deft-ts-sandbox -p 127.0.0.1:3000:3000 ts-sandbox
+```
+
+Use a ssh tunnel to connect to it:
+
+> **Note:** On Windows with WSL2, try `curl http://localhost:3000` first - the tunnel may not be needed if WSL2 networking is configured to forward ports automatically.
+
+```
+ssh -L 3000:localhost:3000 <your-wsl-user>@<WSL_IP>
+```
+
+Then set the SANDBOX_ENDPOINT environmental variable to let deft to connect:
+
+```
+# For Mac
+export SANDBOX_ENDPOINT=http://localhost:3000
+# For Windows
+[Environment]::SetEnvironmentVariable("SANDBOX_ENDPOINT", "http://localhost:3000", "User")
+```
+
+### Setup environmental variable on Windows
+
+```bash
+[Environment]::SetEnvironmentVariable("OPENROUTER_API_KEY", "your_openrouter_api_key", "User")
+[Environment]::SetEnvironmentVariable("GEMINI_API_KEY", "your_gemini_api_key", "User")
+[Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "your_anthropic_api_key", "User")
+[Environment]::SetEnvironmentVariable("OPENAI_API_KEY", "your_openai_api_key", "User")
+[Environment]::SetEnvironmentVariable("DEFT_ALLOWED_COMMANDS", "npm test,npm run build,npm run lint,cargo build", "User")
+```
 
 #### Edit the default configuration
 

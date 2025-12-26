@@ -34,8 +34,8 @@
       "imageName": "ts-sandbox",
       "containerName": "deft-ts-sandbox",
       "portMapping": "3000:3000",
-      "endpoint": "http://localhost:3000",
-      "comment": "TypeScript sandbox - executes code in isolated container"
+      "endpoint": "${SANDBOX_ENDPOINT:-http://localhost:3000}",
+      "comment": "For Windows/Mac: set SANDBOX_ENDPOINT env var, follow instructions in docs/configuration.md"
     },
     {
       "name": "sandbox_browser",
@@ -43,8 +43,8 @@
       "imageName": "ts-sandbox",
       "containerName": "deft-ts-sandbox",
       "portMapping": "3000:3000",
-      "endpoint": "http://localhost:3000",
-      "comment": "Browser features - web search, fetch, snapshot (uses same container as sandbox)"
+      "endpoint": "${SANDBOX_ENDPOINT:-http://localhost:3000}",
+      "comment": "For Windows/Mac: set SANDBOX_ENDPOINT env var, follow instructions in docs/configuration.md"
     },
     {
       "name": "git",
