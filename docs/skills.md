@@ -27,17 +27,17 @@ This approach aligns with Anthropic's "progressive disclosure" architecture for 
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                    System Prompt (lightweight)                   │
-│                                                                  │
+│                    System Prompt (lightweight)                  │
+│                                                                 │
 │  Core Tools: patch, run_cmd, read_skill                         │
 │  MCP Tools: read_file, list_files, git_command, ...             │
-│                                                                  │
-│  <available_skills>                                              │
+│                                                                 │
+│  <available_skills>                                             │
 │    - semantic-search: Smart multi-file code search              │
 │    - ts-sandbox: Execute TypeScript in isolated environment     │
 │    - task-delegation: Delegate complex tasks to sub-agents      │
-│  </available_skills>                                             │
-│                                                                  │
+│  </available_skills>                                            │
+│                                                                 │
 │  Use read_skill(name) to load a skill when needed.              │
 └─────────────────────────────────────────────────────────────────┘
                               │
@@ -48,7 +48,7 @@ This approach aligns with Anthropic's "progressive disclosure" architecture for 
                               │
                               ▼ Agent resolves and injects
 ┌─────────────────────────────────────────────────────────────────┐
-│  SkillLoader:                                                    │
+│  SkillLoader:                                                   │
 │    1. Load SKILL.md from ~/.config/deft/skills/semantic-search/ │
 │    2. Parse allowed-tools: [mgrep]                              │
 │    3. Inject mgrep tool definition into LLM context             │
@@ -57,9 +57,93 @@ This approach aligns with Anthropic's "progressive disclosure" architecture for 
                               │
                               ▼ LLM now has the tool available
 ┌─────────────────────────────────────────────────────────────────┐
-│  LLM can now call: mgrep({ query: "ToolExecutor", scope: "src" })│
+│  LLM can now call: mgrep({ query: "ToolExecutor", scope: "src"})│
 └─────────────────────────────────────────────────────────────────┘
 ```
+
+### Try It Out
+
+Use the test prompts below to see how skills work under Deft.
+
+---
+
+#### 1. Semantic Search (mgrep)
+
+**Precondition**: Confirm a test symbol (e.g., `ToolExecutor`) exists under PWD.
+
+```
+use skill semantic-search to find where <YOUR_SYMBOL> is defined
+```
+
+**Expect:** Skill loads, then mgrep search results
+
+---
+
+#### 2. TypeScript Sandbox
+
+```
+use skill ts-sandbox to verify that 2 + 2 equals 4 using node
+```
+
+**Expect:** Skill loads, sandbox executes `node -e "console.log(2+2)"`, returns 4
+
+---
+
+#### 3. Web Research
+
+```
+use skill web-research to search for "rust async cancellation safety mitigation methods"
+```
+
+**Expect:** Skill loads, DuckDuckGo search results
+
+---
+
+#### 4. Code Navigation (LSP)
+
+```
+use skill code-navigation to find the definition of <YOUR_SYMBOL> class
+```
+
+**Expect:** Skill loads, `search_code` finds class definition with LSP accuracy
+
+---
+
+#### 5. Git Operations
+
+```
+use skill git-scm to show the last 3 commits
+```
+
+**Expect:** Skill loads, git log output without confirmation prompt
+
+---
+
+#### 6. Chrome DevTool
+
+**Precondition**: Set up Chrome DevTools MCP following the official docs. Confirm you can access the Chrome instance:
+
+```
+$ curl http://localhost:9222/json/version
+{
+   "Browser": "Chrome/143.0.7499.42",
+   "Protocol-Version": "1.3",
+   "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36",
+   "V8-Version": "14.3.127.16",
+   "WebKit-Version": "537.36 (@24bdc8c48a0c8c2cd7780deb48bd92b9ed57a490)",
+   "webSocketDebuggerUrl": "ws://localhost:9222/devtools/browser/ea258088-955e-4459-86d8-287ae8384238"
+}
+```
+
+Then run:
+
+```
+use skill chrome-devtools to navigate to https://example.com and run document.title using evaluate_script
+```
+**Expect:** Skill loads, Chrome navigates to example.com, outputs `document.title: "Example Domain"`
+
+---
+
 
 ## Two Types of Skills
 

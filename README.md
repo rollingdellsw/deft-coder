@@ -55,46 +55,13 @@ LLMs are trained on millions of Git diffs. Deft™ speaks their native language.
 | **Partial success**        | Good hunks apply even when others fail, clear error message for fixing |
 | **Multi-file ops**         | Create, modify, delete files in one patch                              |
 
-**Standalone CLI** — Apply patches from **ANY!** LLM (ChatGPT, Claude, Gemini), just ask: "give me a single standard unified diff mode patch", then:
+**Standalone CLI** — Apply patches from **ANY!** LLM (ChatGPT, Claude, Gemini), just ask: "give me a single standard unified diff mode patch", then apply it:
 
 ```bash
-# Confirm you have Node.js >= 18
-$ node --version
-# Install globally via npm (direct download)
-$ git clone https://github.com/rollingdellsw/deft-coder.git
-$ npm install -g deft-coder/release/linux/deft-1.0.2.tgz
-# Build the docker image used for the sandbox MCP server
-$ docker build -t deft-ts-sandbox deft-coder/mcp-server/sandbox-ts
-
-# Deft is a full-featured CLI tool
-$ deft --help
-Usage: deft [command] [options]
-
-Commands:
-  patch <file>   Apply a LLM generated unified diff file directly
-
-Options:
-  --full-auto            Bypass all confirmations (auto-approve all changes)
-  --stdin                Read task from stdin and exit after completion
-  --config <name>        Load a non-default model (e.g. deepseek, gemini, kimi, xai)
-  --thinking-budget <lvl> Override thinking budget level
-                          (xhigh, high, medium, low, minimal, none)
-  --help, -h             Show this help message
-
-# Commands inside Deft session:
-Available commands:                                                                                                                                                                               │
-  /save <n>, /s           - Save current session with name                                                                                                                                        │
-  /load [id], /l          - Load session (interactive or by ID)                                                                                                                                   │
-  /branch, /b             - Branch from a selected message                                                                                                                                        │
-  /config [list|switch]   - List/switch model at runtime                                                                                                                                          │
-  /attach <pattern>       - Attach files (supports globs)                                                                                                                                         │
-  /detach <pattern>       - Detach files                                                                                                                                                          │
-  /list-attachments, /la  - List attached files
-  /exit, /quit, /q        - Exit the application
-
-# Use the patch command like a standard patch command to apply LLM generated patch
 $ deft patch ./llm-suggestions.patch
 ```
+
+→ [Installation](#installation)
 
 LLM providers' web UIs typically deliver the best results for coding tasks. Combining that with this patch tool is the secret to your 10x productivity boost.
 
@@ -159,6 +126,47 @@ The agent preserves LLM sessions to a state that can be faithfully restored from
 ---
 
 ## Configuration
+
+### Installation
+
+```bash
+# Confirm you have Node.js >= 20 (v22 recommended)
+$ node --version
+
+# Clone and install globally
+$ git clone https://github.com/rollingdellsw/deft-coder.git
+$ npm install -g deft-coder/release/linux/deft-1.0.2.tgz
+
+# Build the Docker image for the sandbox MCP server
+$ docker build -t ts-sandbox deft-coder/mcp-server/sandbox-ts
+```
+
+```bash
+# Deft CLI usage
+$ deft --help
+Usage: deft [command] [options]
+
+Commands:
+  patch <file>   Apply a LLM generated unified diff file directly
+
+Options:
+  --full-auto             Bypass all confirmations (auto-approve all changes)
+  --stdin                 Read task from stdin and exit after completion
+  --config <name>         Load a non-default model (e.g. deepseek, gemini, kimi, xai)
+  --thinking-budget <lvl> Override thinking budget level
+                          (xhigh, high, medium, low, minimal, none)
+  --help, -h              Show this help message
+
+# In-session commands:
+  /save <n>, /s           Save current session with name
+  /load [id], /l          Load session (interactive or by ID)
+  /branch, /b             Branch from a selected message
+  /config [list|switch]   List/switch model at runtime
+  /attach <pattern>       Attach files (supports globs)
+  /detach <pattern>       Detach files
+  /list-attachments, /la  List attached files
+  /exit, /quit, /q        Exit the application
+```
 
 ### Minimal Setup (Patch-only)
 
