@@ -386,13 +386,9 @@ function M.send_code_query_from_selection()
     M.show_terminal()
     -- Brief wait to ensure terminal is ready
     vim.wait(100)
-  else
-    -- Terminal is already visible, just ensure we're in the right window
-    if M.state.terminal_winnr and vim.api.nvim_win_is_valid(M.state.terminal_winnr) then
-      vim.api.nvim_set_current_win(M.state.terminal_winnr)
-      vim.cmd('startinsert')
-    end
   end
+  -- Don't switch to terminal here - let the user input their query first
+  -- The callback in prompt_and_send() will handle switching to terminal after input
 
   -- Hide hint
   require('deft.hint').hide()
