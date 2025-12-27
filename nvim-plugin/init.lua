@@ -42,7 +42,7 @@ M.config = {
   debug = false,
 
   -- Auto-hide terminal when switching focus away
-  auto_hide = false,
+  auto_hide = true,
 }
 
 ---Setup the plugin with user configuration
@@ -67,21 +67,17 @@ function M.setup(opts)
 end
 
 ---Launch Deft in a terminal split
-function M.launch_deft()
+---@param auto_focus boolean|nil If true, stay in terminal and enter insert mode (default: true)
+function M.launch_deft(auto_focus)
+  -- Default to auto-focus
+  if auto_focus == nil then
+    auto_focus = true
+  end
+
   if M.state.session_active then
     vim.notify('Deft session already active', vim.log.levels.INFO)
     return
   end
-
-  -- Check if we're being called during keymap execution
-  local debug_info = debug.getinfo(3, "n")
-  local is_from_keymap = false
-  if debug_info and debug_info.name then
-    is_from_keymap = debug_info.name == "send_code_query_from_selection"
-  end
-
-  -- Save whether we should auto-focus after launch
-  M.state.should_auto_focus = is_from_keymap
 
   -- Create terminal split
   local split_cmd
@@ -291,20 +287,20 @@ function M.launch_deft()
     end
   end)
 
-  -- Only return focus to original window if NOT launched from keymap
-  if not M.state.should_auto_focus then
-    if orig_winnr and vim.api.nvim_win_is_valid(orig_winnr) then
-      vim.api.nvim_set_current_win(orig_winnr)
-      vim.cmd('stopinsert')
-    end
-  else
-    -- Stay in terminal window and enter insert mode when launched from keymap
+  -- Focus terminal and enter insert mode if auto_focus is true
+  if auto_focus then
     if M.state.terminal_winnr and vim.api.nvim_win_is_valid(M.state.terminal_winnr) then
       vim.api.nvim_set_current_win(M.state.terminal_winnr)
-      -- Use vim.schedule to ensure terminal is fully ready
       vim.schedule(function()
-        vim.cmd('startinsert')
+        if M.state.terminal_winnr and vim.api.nvim_win_is_valid(M.state.terminal_winnr) then
+          vim.cmd('startinsert')
+        end
       end)
+    end
+  else
+    -- Return to original window
+    if orig_winnr and vim.api.nvim_win_is_valid(orig_winnr) then
+      vim.api.nvim_set_current_win(orig_winnr)
     end
   end
 
@@ -371,21 +367,30 @@ end
 
 ---Send code query from visual selection (called from keymap)
 function M.send_code_query_from_selection()
-  -- Don't send if Deft is not active
+  -- Save original window to return to for prompt
+  local orig_win = vim.api.nvim_get_current_win()
+
+  -- Start or show Deft if needed
   local was_inactive = not M.state.session_active
   if was_inactive then
     -- Schedule notification to avoid "Press ENTER" prompt
     vim.schedule(function()
       vim.notify('Starting Deft...', vim.log.levels.INFO)
     end)
-    M.launch_deft()
+    M.launch_deft(false)  -- Don't auto-focus, we need to show prompt first
     -- Wait longer for first-time startup
     vim.wait(3000)
-  elseif M.state.terminal_hidden then
-    -- If terminal is hidden, show it first
+    -- Return to original window for prompt
+    if vim.api.nvim_win_is_valid(orig_win) then
+      vim.api.nvim_set_current_win(orig_win)
+    end
+  elseif not M.is_terminal_visible_in_current_tab() then
+    -- If terminal is not visible in current tab, show it
     M.show_terminal()
-    -- Brief wait to ensure terminal is ready
-    vim.wait(100)
+    -- Return to original window for prompt
+    if vim.api.nvim_win_is_valid(orig_win) then
+      vim.api.nvim_set_current_win(orig_win)
+    end
   end
   -- Don't switch to terminal here - let the user input their query first
   -- The callback in prompt_and_send() will handle switching to terminal after input
@@ -403,7 +408,7 @@ function M.send_code_query_from_selection()
     -- This callback runs AFTER user has entered their input
     -- Now it's safe to switch focus to Deft terminal
     -- Make sure terminal is visible
-    if M.state.terminal_hidden then
+    if not M.is_terminal_visible_in_current_tab() then
       M.show_terminal()
     end
 
@@ -475,6 +480,26 @@ function M.send_code_query(query, selection)
   end
 end
 
+---Check if the terminal window is currently visible in the current tab
+---@return boolean visible True if terminal window exists and is visible in current tab
+function M.is_terminal_visible_in_current_tab()
+  -- No session means not visible
+  if not M.state.session_active or not M.state.terminal_bufnr then
+    return false
+  end
+
+  -- Check all windows in current tabpage for our terminal buffer
+  local current_tab_wins = vim.api.nvim_tabpage_list_wins(0)
+  for _, win in ipairs(current_tab_wins) do
+    local buf = vim.api.nvim_win_get_buf(win)
+    if buf == M.state.terminal_bufnr then
+      return true
+    end
+  end
+
+  return false
+end
+
 ---Show the deft terminal if it's hidden
 function M.show_terminal()
   if not M.state.session_active then
@@ -482,7 +507,8 @@ function M.show_terminal()
     return false
   end
 
-  if M.state.terminal_hidden and M.state.terminal_bufnr then
+  -- Show terminal if buffer exists but is not visible in current tab
+  if M.state.terminal_bufnr and not M.is_terminal_visible_in_current_tab() then
     -- Recreate the split with the same configuration
     local split_cmd
     if M.config.split_position == 'vertical' then

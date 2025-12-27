@@ -278,8 +278,9 @@ function M.count_all_hunks()
 
   for _, file in ipairs(M.review_state.files) do
     total_hunks = total_hunks + file.total_hunks
-    local file_reviews = M.review_state.reviews[file.filepath] or {}
-    for _ in pairs(file_reviews) do
+    -- Use vim_hunks_reviewed for accurate count
+    local vim_reviewed = file.vim_hunks_reviewed or {}
+    for _ in pairs(vim_reviewed) do
       reviewed_hunks = reviewed_hunks + 1
     end
   end
@@ -306,10 +307,14 @@ function M.calculate_review_stats()
   local files_with_reviews = 0
 
   for _, file in ipairs(M.review_state.files) do
-    total_hunks = total_hunks + file.total_hunks
-    local file_reviews = M.review_state.reviews[file.filepath] or {}
+    -- Use vim hunk count (what user actually reviews block-by-block)
+    local file_total = file.total_hunks or 0
+    total_hunks = total_hunks + file_total
+
+    -- Count vim hunks reviewed (not patch hunks)
+    local vim_reviewed = file.vim_hunks_reviewed or {}
     local file_reviewed_count = 0
-    for _ in pairs(file_reviews) do
+    for _ in pairs(vim_reviewed) do
       file_reviewed_count = file_reviewed_count + 1
     end
     reviewed_hunks = reviewed_hunks + file_reviewed_count
@@ -568,9 +573,10 @@ function M.show_file_selector()
 
   -- Add file entries
   for i, file in ipairs(M.review_state.files) do
-    local reviews = M.review_state.reviews[file.filepath] or {}
+    -- Use vim_hunks_reviewed for accurate display
+    local vim_reviewed = file.vim_hunks_reviewed or {}
     local reviewed_count = 0
-    for _ in pairs(reviews) do
+    for _ in pairs(vim_reviewed) do
       reviewed_count = reviewed_count + 1
     end
 
@@ -578,7 +584,7 @@ function M.show_file_selector()
     local status_symbol = '   '
     if i == M.review_state.current_file_index then
       status_symbol = ' ● '  -- Current file
-    elseif reviewed_count == file.total_hunks then
+    elseif file.total_hunks > 0 and reviewed_count >= file.total_hunks then
       status_symbol = ' ✓ '  -- All hunks reviewed
     end
 
@@ -701,12 +707,12 @@ function M.jump_to_file(file_index)
 
   -- Update current position to selected file
   M.review_state.current_file_index = file_index
-  M.review_state.current_hunk_index = -1 -- Reset *before* first hunk (will be incremented by show_next_hunk)
+  M.review_state.current_hunk_index = 0 -- Start at first hunk (0-indexed)
 
   local file = M.review_state.files[file_index]
 
-  -- Show first hunk of selected file
-  M.show_next_hunk()
+  -- Show diff for selected file, starting at first hunk
+  M.show_file_diff(file, 0)
 end
 
 ---Show the next hunk in sequence
@@ -746,8 +752,19 @@ end
 
 ---Show completion message when all files are reviewed
 function M.show_completion_message()
-  vim.notify('All files reviewed. Submitting...', vim.log.levels.INFO)
-  M.send_all_decisions()
+  -- Check if ALL hunks across ALL files have actually been reviewed
+  local stats = M.calculate_review_stats()
+
+  if stats.unreviewed_hunks == 0 then
+    -- All hunks reviewed, auto-submit
+    vim.notify('All files reviewed. Submitting...', vim.log.levels.INFO)
+    M.send_all_decisions()
+  else
+    -- Some hunks unreviewed, show file selector so user can continue
+    vim.notify(string.format('%d hunks remaining. Use <leader>sf to select file or <leader>d to submit.', stats.unreviewed_hunks), vim.log.levels.INFO)
+    M.close_diff_windows()
+    M.setup_global_keymaps()
+  end
 end
 
 ---Close diff windows without resetting review state
@@ -814,13 +831,13 @@ function M.show_file_diff(file, hunk_index)
   if M.diff_winnr_old and vim.api.nvim_win_is_valid(M.diff_winnr_old) then
     vim.api.nvim_set_current_win(M.diff_winnr_old)
     vim.cmd('diffoff')
-    vim.api.nvim_win_close(M.diff_winnr_old, true)
+    safe_close_win(M.diff_winnr_old)
     M.diff_winnr_old = nil
   end
   if M.diff_winnr_new and vim.api.nvim_win_is_valid(M.diff_winnr_new) then
     vim.api.nvim_set_current_win(M.diff_winnr_new)
     vim.cmd('diffoff')
-    vim.api.nvim_win_close(M.diff_winnr_new, true)
+    safe_close_win(M.diff_winnr_new)
     M.diff_winnr_new = nil
   end
 
@@ -844,18 +861,30 @@ function M.show_file_diff(file, hunk_index)
   local buf_old = vim.api.nvim_create_buf(false, true)
   local buf_new = vim.api.nvim_create_buf(false, true)
 
+  -- Prepare content
+  local old_lines = vim.split(file.existing_content or '', '\n')
+  local new_lines = vim.split(file.new_content or '', '\n')
+
+  -- Detect filetype from filepath extension
+  local filetype = vim.filetype.match({ filename = file.filepath, contents = old_lines })
+  if not filetype or filetype == '' then
+    local ext = vim.fn.fnamemodify(file.filepath, ':e')
+    if ext and ext ~= '' then
+      filetype = vim.filetype.match({ filename = 'dummy.' .. ext }) or ext
+    end
+  end
+
   -- Set buffer options
   for _, buf in ipairs({buf_old, buf_new}) do
     vim.api.nvim_buf_set_option(buf, 'buftype', 'nofile')
     vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
     vim.api.nvim_buf_set_option(buf, 'swapfile', false)
-    vim.api.nvim_buf_set_option(buf, 'filetype', 'diff')
+    if filetype and filetype ~= '' then
+      vim.api.nvim_buf_set_option(buf, 'filetype', filetype)
+    end
   end
 
   -- Set buffer content
-  local old_lines = vim.split(file.existing_content or '', '\n')
-  local new_lines = vim.split(file.new_content or '', '\n')
-
   vim.api.nvim_buf_set_lines(buf_old, 0, -1, false, old_lines)
   vim.api.nvim_buf_set_lines(buf_new, 0, -1, false, new_lines)
 
@@ -1114,7 +1143,7 @@ function M.record_current_hunk(decision)
 
   patch_hunk_idx = patch_hunk_idx or vim_hunk_idx
 
-  -- Record decision for PATCH hunk (not vim hunk)
+  -- Record decision for PATCH hunk (for IPC response)
   if not M.review_state.reviews[current_file.filepath] then
     M.review_state.reviews[current_file.filepath] = {}
   end
@@ -1123,6 +1152,12 @@ function M.record_current_hunk(decision)
     M.review_state.reviews[current_file.filepath][patch_hunk_idx] = decision
   end
 
+  -- Also track vim hunk as reviewed (for completion checking)
+  if not current_file.vim_hunks_reviewed then
+    current_file.vim_hunks_reviewed = {}
+  end
+  current_file.vim_hunks_reviewed[vim_hunk_idx] = true
+
   -- Move to next hunk in current file, or next file
   if M.review_state.current_hunk_index + 1 < #M.current_hunk_positions then
     -- More hunks in this file
@@ -1130,20 +1165,40 @@ function M.record_current_hunk(decision)
     M.highlight_current_hunk()
     M.show_command_menu()
   else
-    -- Move to next file
-    M.review_state.current_file_index = M.review_state.current_file_index + 1
-    M.review_state.current_hunk_index = 0
-
-    if M.review_state.current_file_index > #M.review_state.files then
-      -- All files done
-      M.show_completion_message()
-    else
-      -- Show next file
-      M.show_next_hunk()
-    end
+    -- Current file done - find next unreviewed file or complete
+    M.advance_to_next_unreviewed()
   end
 end
 
+---Find and advance to next file with unreviewed hunks
+function M.advance_to_next_unreviewed()
+  -- Check if all files are fully reviewed
+  local stats = M.calculate_review_stats()
+  if stats.unreviewed_hunks == 0 then
+    M.show_completion_message()
+    return
+  end
+
+  -- Find first file with unreviewed hunks
+  for i, file in ipairs(M.review_state.files) do
+    local vim_reviewed = file.vim_hunks_reviewed or {}
+    local reviewed_count = 0
+    for _ in pairs(vim_reviewed) do
+      reviewed_count = reviewed_count + 1
+    end
+
+    -- File has unreviewed hunks if reviewed < total (and total > 0)
+    if file.total_hunks > 0 and reviewed_count < file.total_hunks then
+      M.review_state.current_file_index = i
+      M.review_state.current_hunk_index = 0
+      M.show_file_diff(file, 0)
+      return
+    end
+  end
+
+  -- All reviewed (fallback)
+  M.show_completion_message()
+end
 ---Show current hunk (legacy mode)
 function M.show_current_hunk()
   if not M.current_diff or not M.current_diff.hunkContent then
@@ -1469,21 +1524,29 @@ function M.setup_diff_keymaps()
           end
 
           -- Store rejection with message as a table
+          local rejection_msg = (input and #input > 0) and input or 'User rejected'
+
           if M.review_state.reviews[current_file.filepath][patch_hunk_idx] == nil then
-            local rejection_msg = (input and #input > 0) and input or nil
             M.review_state.reviews[current_file.filepath][patch_hunk_idx] = {
               decision = 'reject',
-              message = rejection_msg
+              messages = { rejection_msg }  -- Use array to accumulate messages
             }
-
-            local msg_display = rejection_msg or '(no message provided)'
-            print(string.format('[NVIM DEBUG] âš ï¸  REJECTION RECORDED for PATCH hunk %d (vim %d) in %s',
-              patch_hunk_idx, vim_hunk_idx, current_file.filepath))
-            print(string.format('[NVIM DEBUG]   Rejection message: "%s"', msg_display))
           else
-            print(string.format('[NVIM DEBUG] PATCH hunk %d already decided, skipping',
-              patch_hunk_idx))
+            -- Patch hunk already has a decision - append message if rejecting
+            local existing = M.review_state.reviews[current_file.filepath][patch_hunk_idx]
+            if existing.decision == 'reject' and existing.messages then
+              table.insert(existing.messages, rejection_msg)
+            end
           end
+
+          print(string.format('[NVIM DEBUG] âš ï¸  REJECTION RECORDED for PATCH hunk %d (vim %d) in %s: %s',
+            patch_hunk_idx, vim_hunk_idx, current_file.filepath, rejection_msg))
+
+          -- Track vim hunk as reviewed (for completion checking)
+          if not current_file.vim_hunks_reviewed then
+            current_file.vim_hunks_reviewed = {}
+          end
+          current_file.vim_hunks_reviewed[vim_hunk_idx] = true
 
           -- Advance to next hunk (same logic as accept)
           M.advance_after_decision()
@@ -1550,9 +1613,10 @@ function M.send_all_decisions()
   -- This ensures the patch tool receives decisions for ALL hunks
   for _, file in ipairs(M.review_state.files) do
     local file_reviews = M.review_state.reviews[file.filepath] or {}
+    local patch_count = file.patch_hunk_count or file.total_hunks
 
     -- Mark unreviewed hunks as accepted
-    for hunk_idx = 0, file.total_hunks - 1 do
+    for hunk_idx = 0, patch_count - 1 do
       if file_reviews[hunk_idx] == nil then
         file_reviews[hunk_idx] = 'accept'
       end
@@ -1563,6 +1627,7 @@ function M.send_all_decisions()
 
   -- Build file decisions
   local file_decisions = {}
+  local any_rejection = false
   for _, file in ipairs(M.review_state.files) do
     local file_reviews = M.review_state.reviews[file.filepath] or {}
 
@@ -1575,8 +1640,9 @@ function M.send_all_decisions()
     local hunk_decisions = {}
     local all_accepted = true
     local any_rejected = false
+    local patch_count = file.patch_hunk_count or file.total_hunks
 
-    for hunk_idx = 0, file.total_hunks - 1 do
+    for hunk_idx = 0, patch_count - 1 do
       local hunk_decision = file_reviews[hunk_idx]
 
       if hunk_decision then
@@ -1589,7 +1655,8 @@ function M.send_all_decisions()
         table.insert(hunk_decisions, {
           hunkIndex = hunk_idx,
           decision = decision_str,
-          message = type(hunk_decision) == 'table' and hunk_decision.message or nil,
+          message = type(hunk_decision) == 'table' and
+            (hunk_decision.messages and table.concat(hunk_decision.messages, '; ') or hunk_decision.message) or nil,
         })
 
         if decision_str == 'reject' then
@@ -1599,10 +1666,15 @@ function M.send_all_decisions()
       end
     end
 
+    if any_rejected then
+      any_rejection = true
+    end
+
     -- Determine file-level decision
     local decision = 'accept'  -- Default
-    if reviewed_count > 0 and reviewed_count == file.total_hunks then
-      -- If we have any rejections, mark file as 'mixed' or 'reject'
+    -- Check if there are any rejections - don't compare counts since
+    -- reviewed_count uses patch hunks while total_hunks uses vim.diff hunks
+    if reviewed_count > 0 then
       if any_rejected then
         decision = 'partial'  -- Some hunks accepted, some rejected
       else
@@ -1622,9 +1694,13 @@ function M.send_all_decisions()
   end
 
   -- Send confirmation response
+  -- CRITICAL: Use 'accept' (not 'accept-all') when there are rejections
+  -- 'accept-all' causes TypeScript to skip fileDecisions processing
+  -- 'accept' falls through to the fileDecisions handler
+  -- Note: 'partial' is NOT a valid top-level decision (only valid for file-level)
   local ipc_message = {
     requestId = M.current_diff.requestId,
-    decision = 'accept-all',
+    decision = any_rejection and 'accept' or 'accept-all',
     fileDecisions = file_decisions,
   }
 

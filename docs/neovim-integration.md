@@ -91,10 +91,10 @@ require('deft').setup({
   show_hint = false,            -- Show hint when entering visual mode
   hint_delay = 500,             -- Delay before showing hint (ms)
 
-  -- Auto-hide terminal when focus leaves
-  auto_hide = true,             -- Hide terminal on WinLeave
+  -- Auto-hide terminal when focus leaves (default: true)
+  auto_hide = true,             -- Terminal auto-hides when you switch to code
 
-  -- Debug mode (verbose logging)
+  -- Debug mode (verbose logging, default: false)
   debug = false,
 })
 ```
