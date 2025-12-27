@@ -177,7 +177,7 @@ No configuration needed for patch-only usage.
 Using your API key or GCP Vertex AI token, run the tool from the CLI or launch it inside Neovim to select models from OpenRouter (default GLM 4.7, Kimi K2, DeepSeek v3.2, Grok 4 Fast), Vertex AI (Gemini), Anthropic (Claude), or OpenAI (GPT), mixing them in any arbitrary planner/executor combination.
 
 ```bash
-# Add your API key (choose one)
+# Add your API key (choose one, OpenRouter is default, with model GLM 4.7)
 export OPENROUTER_API_KEY="your_openrouter_api_key"
 export GEMINI_API_KEY="your_gemini_api_key"
 export GOOGLE_CLOUD_PROJECT="your_gcp_project"

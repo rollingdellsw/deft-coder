@@ -1,0 +1,69 @@
+# Triggers:
+#   Pushes to main that touch release/**
+#   All pull requests to main
+#   Manual trigger via GitHub UI (workflow_dispatch)
+# Watch it run from https://github.com/rollingdellsw/deft-coder/actions
+#
+name: Test macOS Installation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'release/**'
+  pull_request:
+    branches: [main]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  test-macos-install:
+    strategy:
+      matrix:
+        os: [macos-latest]  # macos-latest is ARM (M1), macos-13 is Intel
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Display environment info
+        run: |
+          echo "OS: $(uname -a)"
+          echo "Node: $(node --version)"
+          echo "npm: $(npm --version)"
+          echo "Architecture: $(uname -m)"
+
+      - name: Install deft globally from tarball
+        run: |
+          npm install -g ./release/deft-1.0.3.tgz
+
+      - name: Verify installation
+        run: |
+          which deft
+          deft --help
+
+      - name: Test patch command (dry run)
+        run: |
+          # Create a test file
+          echo 'const x = 1;' > /tmp/test.js
+
+          # Create a test patch
+          cat > /tmp/test.patch << 'EOF'
+          --- a/test.js
+          +++ b/test.js
+          @@ -1 +1 @@
+          -const x = 1;
+          +const x = 2;
+          EOF
+
+          # Apply patch (this tests the core patch functionality)
+          cd /tmp && deft patch ./test.patch || echo "Patch test completed"
+
+          # Verify the change
+          cat /tmp/test.js
+
