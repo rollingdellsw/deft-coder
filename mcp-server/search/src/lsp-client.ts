@@ -24,6 +24,18 @@ export interface SymbolInformation {
   containerName?: string;
 }
 
+export interface DocumentSymbol {
+  name: string;
+  detail?: string;
+  kind: number;
+  range: LSPRange;
+  selectionRange: LSPRange;
+  children?: DocumentSymbol[];
+}
+
+// Response can be either flat SymbolInformation[] or hierarchical DocumentSymbol[]
+export type DocumentSymbolResponse = SymbolInformation[] | DocumentSymbol[];
+
 export interface LSPDiagnostic {
   range: LSPRange;
   severity?: number; // 1=Error, 2=Warning, 3=Info, 4=Hint
@@ -367,6 +379,30 @@ export class LSPClient {
     const params = { query };
     const response = await this.sendRequest("workspace/symbol", params);
     return (response.result as SymbolInformation[]) ?? [];
+  }
+
+  /**
+   * Get document symbols for a specific file (textDocument/documentSymbol)
+   * Returns hierarchical symbols for the given document
+   */
+  public async getDocumentSymbols(
+    uri: string,
+    content: string,
+    languageId: string,
+  ): Promise<DocumentSymbolResponse> {
+    if (!this.isInitialized) {
+      throw new Error("LSP client is not initialized.");
+    }
+
+    // Ensure document is open
+    await this.openDocument(uri, languageId, content);
+
+    const params = { textDocument: { uri } };
+    const response = await this.sendRequest(
+      "textDocument/documentSymbol",
+      params,
+    );
+    return (response.result as DocumentSymbolResponse) ?? [];
   }
 
   /**

@@ -1,7 +1,12 @@
 import * as fs from "fs/promises";
 import * as path from "path";
 import { ToolHandler, MCPToolResult, ServerContext } from "../server.js";
+import { LSPManager } from "../lsp-manager.js";
+import { DocumentSymbol, SymbolInformation } from "../lsp-client.js";
 import { printDebug } from "../utils/log.js";
+
+// Singleton LSP manager
+let lspManager: LSPManager | undefined;
 
 export interface FileStructureParams {
   file_path: string;
@@ -55,7 +60,7 @@ export interface FileStructure {
   imports: ImportInfo[];
   exports: string[];
   global_variables: GlobalVariableInfo[];
-  parse_backend: "regex";
+  parse_backend: "lsp" | "regex";
 }
 
 /**
@@ -80,6 +85,111 @@ function detectLanguage(filePath: string): string {
     ".hpp": "cpp",
   };
   return languageMap[ext] ?? "unknown";
+}
+
+/**
+ * Map language string to LSP language ID
+ */
+function getLanguageId(language: string): string {
+  const map: Record<string, string> = {
+    typescript: "typescript",
+    javascript: "javascript",
+    rust: "rust",
+    python: "python",
+    go: "go",
+    java: "java",
+    cpp: "cpp",
+    c: "c",
+  };
+  return map[language] ?? language;
+}
+
+/**
+ * Parse LSP document symbols into our FileStructure format
+ */
+function parseLspSymbols(
+  symbols: DocumentSymbol[] | SymbolInformation[],
+  includePrivate: boolean,
+): Omit<
+  FileStructure,
+  "language" | "file_size" | "line_count" | "parse_backend"
+> {
+  const classes: ClassInfo[] = [];
+  const functions: FunctionInfo[] = [];
+  const globalVariables: GlobalVariableInfo[] = [];
+
+  function processSymbol(
+    sym: DocumentSymbol | SymbolInformation,
+    _containerName?: string,
+  ) {
+    const name = sym.name;
+    const kind = sym.kind;
+
+    // Skip private symbols if not including private
+    if (!includePrivate && (name.startsWith("_") || name.startsWith("#"))) {
+      return;
+    }
+
+    // Get line number (handle both formats)
+    const range = "range" in sym ? sym.range : sym.location.range;
+    const lineStart = range.start.line + 1;
+    const lineEnd = range.end.line + 1;
+
+    // Class/Struct/Enum/Interface/Trait (kinds 5, 10, 11, 23)
+    if (kind === 5 || kind === 10 || kind === 11 || kind === 23) {
+      const methods: MethodInfo[] = [];
+      // Process children if DocumentSymbol
+      if ("children" in sym && sym.children) {
+        for (const child of sym.children) {
+          if (child.kind === 6 || child.kind === 12) {
+            // Method or Function
+            methods.push({
+              name: child.name,
+              signature: child.detail ?? child.name,
+              line: child.range.start.line + 1,
+              is_async: child.detail?.includes("async") ?? false,
+            });
+          }
+        }
+      }
+      classes.push({ name, line_start: lineStart, line_end: lineEnd, methods });
+    }
+    // Function (kind 12)
+    else if (kind === 12 || kind === 6) {
+      const detail = "detail" in sym ? sym.detail : undefined;
+      functions.push({
+        name,
+        signature: detail ?? name,
+        line_start: lineStart,
+        line_end: lineEnd,
+        is_async: detail?.includes("async") ?? false,
+      });
+    }
+    // Variable/Constant (kinds 13, 14)
+    else if (kind === 13 || kind === 14) {
+      const detail = "detail" in sym ? sym.detail : undefined;
+      globalVariables.push({ name, line: lineStart, type_hint: detail });
+    }
+
+    // Recurse into children for DocumentSymbol
+    if ("children" in sym && sym.children) {
+      for (const child of sym.children) {
+        processSymbol(child, name);
+      }
+    }
+  }
+
+  for (const sym of symbols) {
+    processSymbol(sym);
+  }
+
+  return {
+    classes,
+    functions,
+    imports: [],
+    exports: [],
+    global_variables: globalVariables,
+  };
 }
 
 /**
@@ -282,6 +392,135 @@ function parseTypeScriptStructure(
 }
 
 /**
+ * Parse Rust file structure using regex
+ */
+function parseRustStructure(
+  content: string,
+  includePrivate: boolean,
+): Omit<
+  FileStructure,
+  "language" | "file_size" | "line_count" | "parse_backend"
+> {
+  const lines = content.split("\n");
+  const classes: ClassInfo[] = []; // structs/enums in Rust
+  const functions: FunctionInfo[] = [];
+  const imports: ImportInfo[] = [];
+  const globalVariables: GlobalVariableInfo[] = [];
+
+  // Rust patterns
+  const structPattern = /^\s*(?:pub\s+)?struct\s+(\w+)/;
+  const enumPattern = /^\s*(?:pub\s+)?enum\s+(\w+)/;
+  const traitPattern = /^\s*(?:pub\s+)?trait\s+(\w+)/;
+  const implPattern = /^\s*impl(?:<[^>]+>)?\s+(?:(\w+)\s+for\s+)?(\w+)/;
+  const fnPattern =
+    /^\s*(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)/;
+  const usePattern = /^\s*use\s+([^;]+);/;
+  const constPattern = /^\s*(?:pub\s+)?(?:const|static)\s+(\w+)\s*:\s*([^=]+)/;
+
+  let braceDepth = 0;
+
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    if (line === undefined) continue;
+    const lineNum = i + 1;
+
+    // Track brace depth
+    braceDepth += (line.match(/{/g) ?? []).length;
+    braceDepth -= (line.match(/}/g) ?? []).length;
+
+    // Struct detection
+    const structMatch = line.match(structPattern);
+    if (structMatch !== null) {
+      const name = structMatch[1] ?? "";
+      if (!includePrivate && !line.includes("pub ")) continue;
+      classes.push({
+        name,
+        line_start: lineNum,
+        line_end: lineNum,
+        methods: [],
+      });
+      continue;
+    }
+
+    // Enum detection
+    const enumMatch = line.match(enumPattern);
+    if (enumMatch !== null) {
+      const name = enumMatch[1] ?? "";
+      if (!includePrivate && !line.includes("pub ")) continue;
+      classes.push({
+        name: `enum ${name}`,
+        line_start: lineNum,
+        line_end: lineNum,
+        methods: [],
+      });
+      continue;
+    }
+
+    // Trait detection
+    const traitMatch = line.match(traitPattern);
+    if (traitMatch !== null) {
+      const name = traitMatch[1] ?? "";
+      if (!includePrivate && !line.includes("pub ")) continue;
+      classes.push({
+        name: `trait ${name}`,
+        line_start: lineNum,
+        line_end: lineNum,
+        methods: [],
+      });
+      continue;
+    }
+
+    // Function detection (top-level)
+    if (braceDepth === 0 || (braceDepth === 1 && line.match(implPattern))) {
+      const fnMatch = line.match(fnPattern);
+      if (fnMatch !== null) {
+        const name = fnMatch[1] ?? "";
+        if (!includePrivate && !line.includes("pub ")) continue;
+        functions.push({
+          name,
+          signature: `fn ${name}(${fnMatch[2] ?? ""})`,
+          line_start: lineNum,
+          line_end: lineNum,
+          is_async: line.includes("async "),
+        });
+      }
+    }
+
+    // Use/import detection
+    const useMatch = line.match(usePattern);
+    if (useMatch !== null) {
+      const module = useMatch[1]?.trim() ?? "";
+      imports.push({
+        module,
+        names: [module.split("::").pop() ?? module],
+        line: lineNum,
+        is_relative:
+          module.startsWith("crate::") || module.startsWith("super::"),
+      });
+    }
+
+    // Const/static detection
+    const constMatch = line.match(constPattern);
+    if (constMatch !== null && braceDepth === 0) {
+      if (!includePrivate && !line.includes("pub ")) continue;
+      globalVariables.push({
+        name: constMatch[1] ?? "",
+        line: lineNum,
+        type_hint: constMatch[2]?.trim(),
+      });
+    }
+  }
+
+  return {
+    classes,
+    functions,
+    imports,
+    exports: [], // Rust uses pub visibility, not explicit exports
+    global_variables: globalVariables,
+  };
+}
+
+/**
  * Get file structure using regex-based parsing
  */
 async function getFileStructure(
@@ -318,6 +557,53 @@ async function getFileStructure(
     `[FileStructure] Parsing ${filePath} (${language}, ${lineCount} lines)`,
   );
 
+  // Try LSP first for supported languages
+  const lspLanguages = ["typescript", "rust", "python", "go"];
+  if (lspLanguages.includes(language)) {
+    try {
+      if (!lspManager) {
+        const absoluteWorkingDir = path.resolve(workingDir);
+        lspManager = new LSPManager(absoluteWorkingDir);
+        const inferred = await lspManager.inferLanguage();
+        if (inferred) {
+          await lspManager.initialize(inferred);
+        }
+      }
+
+      const lspLang = await lspManager.inferLanguage();
+      if (lspLang) {
+        const client = await lspManager.getClientForLanguage(lspLang);
+        if (client) {
+          const uri = `file://${fullPath}`;
+          const languageId = getLanguageId(language);
+          const symbols = await client.getDocumentSymbols(
+            uri,
+            content,
+            languageId,
+          );
+
+          if (symbols.length > 0) {
+            printDebug(
+              `[FileStructure] Using LSP backend, got ${symbols.length} symbols`,
+            );
+            const structure = parseLspSymbols(symbols, includePrivate);
+            return {
+              language,
+              file_size: stats.size,
+              line_count: lineCount,
+              ...structure,
+              parse_backend: "lsp",
+            };
+          }
+        }
+      }
+    } catch (error) {
+      printDebug(
+        `[FileStructure] LSP failed, falling back to regex: ${(error as Error).message}`,
+      );
+    }
+  }
+
   // Parse based on language
   let structure: Omit<
     FileStructure,
@@ -326,6 +612,8 @@ async function getFileStructure(
 
   if (language === "typescript" || language === "javascript") {
     structure = parseTypeScriptStructure(content, includePrivate);
+  } else if (language === "rust") {
+    structure = parseRustStructure(content, includePrivate);
   } else {
     // For unsupported languages, return empty structure
     structure = {
@@ -353,7 +641,7 @@ async function getFileStructure(
 export const getFileStructureToolHandler: ToolHandler = {
   name: "get_file_structure",
   description:
-    "Parse file structure: classes, functions, imports, exports. LSP based tool.",
+    "Parse file structure: classes/structs, functions, imports, exports. Supports TypeScript, JavaScript, and Rust.",
 
   inputSchema: {
     type: "object",
