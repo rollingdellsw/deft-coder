@@ -74,10 +74,22 @@ export class LSPClient {
   // Store diagnostics received via notifications
   private diagnosticsMap: Map<string, LSPDiagnostic[]> = new Map();
 
+  // Track if we've opened a file to initialize the project
+  private projectInitialized = false;
+
+  // Track if we've received initial diagnostics (signals project is ready)
+  private receivedInitialDiagnostics = false;
+
+  // Language ID for this LSP client
+  private languageId: string = "typescript";
+
   constructor(
     private serverCommand: string[],
     private workspaceRoot: string,
-  ) {}
+    languageId?: string,
+  ) {
+    if (languageId) this.languageId = languageId;
+  }
 
   public async start(): Promise<boolean> {
     printDebug(
@@ -233,6 +245,9 @@ export class LSPClient {
           `[LSPClient] Received ${params.diagnostics.length} diagnostics for ${params.uri}`,
         );
 
+        // Mark that we've received diagnostics (project is initialized)
+        this.receivedInitialDiagnostics = true;
+
         // Resolve any pending waiters for this URI
         const waiter = this.diagnosticWaiters.get(params.uri);
         if (waiter) {
@@ -243,15 +258,115 @@ export class LSPClient {
     }
   }
 
+  /**
+   * Ensure the LSP project is initialized by opening a TypeScript file.
+   * typescript-language-server requires at least one open file for workspace/symbol to work.
+   */
+  public async ensureProjectInitialized(): Promise<void> {
+    if (this.projectInitialized) return;
+
+    const fs = await import("fs/promises");
+
+    // rust-analyzer indexes from Cargo.toml automatically, no need to open a file
+    if (this.languageId === "rust") {
+      printDebug(`[LSPClient] Waiting for rust-analyzer to index...`);
+      await new Promise((r) => setTimeout(r, 3000));
+      this.projectInitialized = true;
+      return;
+    }
+
+    // For other languages, find and open a source file to trigger project creation
+    const sourceFile = await this.findFirstSourceFile(this.workspaceRoot);
+    if (sourceFile) {
+      try {
+        const content = await fs.readFile(sourceFile, "utf-8");
+        const uri = `file://${sourceFile}`;
+        printDebug(`[LSPClient] Opening ${uri} to initialize project`);
+        await this.openDocument(uri, this.languageId, content);
+
+        // Wait for tsserver to index - either until we receive diagnostics or timeout
+        const maxWait = 5000;
+        const checkInterval = 100;
+        let waited = 0;
+
+        while (!this.receivedInitialDiagnostics && waited < maxWait) {
+          await new Promise((r) => setTimeout(r, checkInterval));
+          waited += checkInterval;
+        }
+
+        if (this.receivedInitialDiagnostics) {
+          printDebug(
+            `[LSPClient] Project ready after ${waited}ms (received diagnostics)`,
+          );
+        } else {
+          printDebug(`[LSPClient] Project init timeout after ${maxWait}ms`);
+        }
+
+        this.projectInitialized = true;
+      } catch (e) {
+        printDebug(
+          `[LSPClient] Failed to open ${sourceFile}: ${(e as Error).message}`,
+        );
+      }
+    } else {
+      printDebug(`[LSPClient] No source file found to initialize project`);
+    }
+  }
+
+  private async findFirstSourceFile(dir: string): Promise<string | null> {
+    const fs = await import("fs/promises");
+    const path = await import("path");
+
+    // Define extensions based on language
+    const extMap: Record<string, string[]> = {
+      typescript: [".ts", ".tsx"],
+      rust: [".rs"],
+      python: [".py"],
+      go: [".go"],
+      java: [".java"],
+      cpp: [".cpp", ".cc", ".cxx", ".hpp"],
+      c: [".c", ".h"],
+    };
+    const extensions = extMap[this.languageId] ?? [".ts"];
+    const isSourceFile = (name: string) =>
+      extensions.some((ext) => name.endsWith(ext)) && !name.endsWith(".d.ts");
+
+    try {
+      // Prefer src/ directory files first (main source code, not test files)
+      const srcDir = path.join(dir, "src");
+      try {
+        const srcEntries = await fs.readdir(srcDir, { withFileTypes: true });
+        for (const entry of srcEntries) {
+          if (entry.isFile() && isSourceFile(entry.name)) {
+            return path.join(srcDir, entry.name);
+          }
+        }
+      } catch {}
+
+      // Fallback to root directory
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isFile() && isSourceFile(entry.name)) {
+          return path.join(dir, entry.name);
+        }
+      }
+    } catch {}
+    return null;
+  }
+
   public async getWorkspaceSymbols(
     query: string,
   ): Promise<SymbolInformation[]> {
     if (!this.isInitialized) {
       throw new Error("LSP client is not initialized.");
     }
+
+    // Ensure project is initialized before querying symbols
+    await this.ensureProjectInitialized();
+
     const params = { query };
     const response = await this.sendRequest("workspace/symbol", params);
-    return response.result as SymbolInformation[];
+    return (response.result as SymbolInformation[]) ?? [];
   }
 
   /**

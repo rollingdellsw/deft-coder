@@ -59,6 +59,10 @@ export class LSPManager {
         : []
       : Array.from(this.serverConfigs.keys());
 
+    printDebug(
+      `[LSPManager] Detecting LSP servers: ${serversToCheck.join(", ")}`,
+    );
+
     for (const lang of serversToCheck) {
       const command = this.serverConfigs.get(lang as LanguageID);
       if (!command) continue;
@@ -67,10 +71,9 @@ export class LSPManager {
       if (exePath) {
         this.detectedServers.set(lang, [exePath, ...command.slice(1)]);
         printDebug(`[LSPManager] Found ${lang} LSP server at: ${exePath}`);
-      } else {
-        printInfo(
-          `\x1b[33mCould not find a LSP server, try enable it for better LLM code search performance.\x1b[0m`,
-        );
+      } else if (limitTo === lang) {
+        // Only warn if we specifically need this language
+        printDebug(`[LSPManager] ${lang} LSP server not found: ${command[0]}`);
       }
     }
   }
@@ -125,7 +128,7 @@ export class LSPManager {
     // Create a new client if a server is detected
     if (this.detectedServers.has(language)) {
       const command = this.detectedServers.get(language)!;
-      const client = new LSPClient(command, this.workspaceRoot);
+      const client = new LSPClient(command, this.workspaceRoot, language);
       if (await client.start()) {
         this.clients.set(language, client);
         return client;

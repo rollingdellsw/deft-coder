@@ -344,9 +344,9 @@ async function searchCode(
   const searchPath = params.path ?? ".";
   const fileTypes = params.file_types ?? [];
   const excludePaths = params.exclude_paths ?? [];
-  const maxResults = Math.min(params.max_results ?? 20, 50);
+  const maxResults = Math.min(params.max_results ?? 50, 50);
   const start = params.start ?? 0;
-  const contextLines = Math.min(params.context_lines ?? 1, 5);
+  const contextLines = Math.min(params.context_lines ?? 3, 5);
 
   // LSP-based search for definitions and references
   if (searchType === "definition" || searchType === "references") {
@@ -354,22 +354,60 @@ async function searchCode(
       if (!lspManager) {
         // IMPROVEMENT: Ensure absolute path for LSP rootUri (fixes file://. issues)
         const absoluteWorkingDir = path.resolve(workingDir);
+        printDebug(
+          `[DEBUG search-code] Creating LSPManager with workingDir=${absoluteWorkingDir}`,
+        );
         lspManager = new LSPManager(absoluteWorkingDir);
         await lspManager.initialize();
       }
       const language = await lspManager.inferLanguage();
+      printDebug(`[DEBUG search-code] inferLanguage returned: ${language}`);
       if (language) {
         const client = await lspManager.getClientForLanguage(language);
+        printDebug(
+          `[DEBUG search-code] getClientForLanguage(${language}) returned: ${client ? "client" : "undefined"}`,
+        );
         if (client) {
           printDebug(`[Search] Using backend: lsp`);
           const symbols = await client.getWorkspaceSymbols(query);
-          const results = symbols.map((symbol) => ({
+
+          // Resolve full search path for filtering
+          const validation = validatePath(searchPath, workingDir);
+          const fullSearchPath = validation.valid
+            ? validation.fullPath!
+            : path.resolve(workingDir, searchPath);
+
+          let results = symbols.map((symbol) => ({
             file_path: symbol.location.uri.replace("file://", ""),
             line_number: symbol.location.range.start.line + 1,
             column: symbol.location.range.start.character + 1,
             match_text: symbol.name,
             context: `Symbol: ${symbol.name} (kind: ${symbol.kind})`,
           }));
+
+          // Apply path filter (LSP returns workspace-wide results)
+          if (searchPath !== ".") {
+            results = results.filter((r) =>
+              r.file_path.startsWith(fullSearchPath),
+            );
+          }
+
+          // Apply file_types filter
+          if (fileTypes.length > 0) {
+            results = results.filter((r) => {
+              const ext = path.extname(r.file_path).slice(1); // Remove leading dot
+              return fileTypes.includes(ext);
+            });
+          }
+
+          // Apply exclude_paths filter
+          if (excludePaths.length > 0) {
+            results = results.filter((r) => {
+              return !excludePaths.some((pattern) =>
+                r.file_path.includes(pattern),
+              );
+            });
+          }
 
           return {
             results: results.slice(start, start + maxResults),
@@ -379,11 +417,11 @@ async function searchCode(
         }
       }
       printDebug(
-        "[Search] LSP client not available or language not inferred, falling back to ripgrep.",
+        "[Search] LSP not available, falling back to ripgrep (text-based, non-semantic).",
       );
     } catch (error) {
       printDebug(
-        `[Search] LSP search failed with error: ${(error as Error).message}. Falling back to ripgrep.`,
+        `[DEBUG search-code] LSP search failed: ${(error as Error).message}\n${(error as Error).stack}`,
       );
     }
   }
@@ -481,7 +519,7 @@ async function searchCode(
 export const searchCodeToolHandler: ToolHandler = {
   name: "search_code",
   description:
-    "Search for code patterns in codebase. Types: definition, references, text, regex. LSP and ripgrep based tool",
+    "Search for code patterns. Types: definition/references (LSP workspace symbols, same behavior), text (literal), regex. Falls back to ripgrep if LSP unavailable.",
 
   inputSchema: {
     type: "object",
@@ -511,7 +549,8 @@ export const searchCodeToolHandler: ToolHandler = {
       },
       max_results: {
         type: "integer",
-        description: "Maximum number of results to return (default: 50)",
+        description:
+          "Maximum number of results to return (default: 50, max: 50)",
       },
       start: {
         type: "integer",
@@ -519,7 +558,8 @@ export const searchCodeToolHandler: ToolHandler = {
       },
       context_lines: {
         type: "integer",
-        description: "Number of context lines before/after match (default: 3)",
+        description:
+          "Number of context lines before/after match (default: 3, max: 5)",
       },
     },
     required: ["query", "search_type"],
