@@ -108,6 +108,10 @@
     },
     "systemPrompt": "You are a coding assistant with file system access via tools.\n\nAvailable tools allow you to read, write, list, and search files.\n\nGuidelines:\n1. Always read files before modifying them\n2. Make focused, targeted changes\n3. Explain your reasoning clearly\n4. Remember that write operations require user confirmation\n\nTools execute sequentially, not in parallel."
   },
+  "storage": {
+    "maxSessionStorageMb": 300,
+    "autoCleanupDays": 90
+  },
   "skills": {
     "sources": [
       {
