@@ -183,7 +183,7 @@ Options:
 
 ### Supported Providers
 
-OpenRouter (default, with GLM 4.7), Anthropic (Claude), OpenAI (GPT), Google (Gemini via API key or Vertex AI), and more. Mix any models as planner/executor combinations.
+OpenRouter (default, with GLM 4.7), Anthropic (Claude), OpenAI (GPT), Google (Gemini via API key or Vertex AI via Application Default Credentials), and more. Can mix any models as planner/executor combinations.
 
 → [Full Configuration Guide](./docs/configuration.md)
 
