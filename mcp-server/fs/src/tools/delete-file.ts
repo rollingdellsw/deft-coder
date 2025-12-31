@@ -23,7 +23,7 @@ export const deleteFileTool: ToolHandler = {
 
     const validation = validatePath(filePath, context.workingDirectory);
     if (!validation.valid) {
-      printError(`[delete_file] âŒ Validation failed: ${validation.error}`);
+      printError(`[delete_file] ✗ Validation failed: ${validation.error}`);
       return {
         content: [
           {
@@ -37,12 +37,12 @@ export const deleteFileTool: ToolHandler = {
 
     try {
       await fs.unlink(validation.fullPath as string);
-      printDebug(`[delete_file] âœ" Successfully deleted: ${filePath}`);
+      printDebug(`[delete_file] ✓ Successfully deleted: ${filePath}`);
       return {
         content: [{ type: "text", text: `Deleted file: ${filePath}` }],
       };
     } catch (error) {
-      printError(`[delete_file] âŒ Error: ${(error as Error).message}`);
+      printError(`[delete_file] Error: ${(error as Error).message}`);
       return {
         content: [
           {

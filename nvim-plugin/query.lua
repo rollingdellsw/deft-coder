@@ -76,6 +76,18 @@ function M.get_selection()
   }
 end
 
+---Build a formatted query with code context
+---@param instruction string The user's instruction/query
+---@param context table Selection context from get_selection_with_context()
+---@return string Formatted query with code context
+local function build_query_with_context(instruction, context)
+  return instruction .. '\n\n' ..
+         'Selected code from ' .. context.filepath ..
+         ' (lines ' .. context.line_start .. '-' .. context.line_end .. '):\n' ..
+         '```\n' .. context.text .. '\n```\n\n' ..
+         'Full file for context:\n```\n' .. context.full_file_content .. '\n```'
+end
+
 ---Show a multi-line input box that auto-expands
 ---@param title string Window title
 ---@param on_submit function Callback(text)
@@ -160,15 +172,7 @@ function M.prompt_and_send(on_complete)
 
   -- Use new multi-line input
   M.show_multiline_input('What would you like to do?', function(instruction)
-    -- Build the complete message with context + instruction
-    -- Note: instruction can now be multi-line
-
-    -- Build the complete message with context + instruction
-    local query = instruction .. '\n\n' ..
-                  'Selected code from ' .. context.filepath ..
-                  ' (lines ' .. context.line_start .. '-' .. context.line_end .. '):\n' ..
-                  '```\n' .. context.text .. '\n```\n\n' ..
-                  'Full file for context:\n```\n' .. context.full_file_content .. '\n```'
+    local query = build_query_with_context(instruction, context)
 
     -- Send to Deft
     local deft = require('deft')
@@ -199,12 +203,7 @@ function M.send_with_query(query, on_complete)
   local hint_module = require('deft.hint')
   hint_module.hide()
 
-  -- Build message with full context
-  local full_query = query .. '\n\n' ..
-                     'Selected code from ' .. context.filepath ..
-                     ' (lines ' .. context.line_start .. '-' .. context.line_end .. '):\n' ..
-                     '```\n' .. context.text .. '\n```\n\n' ..
-                     'Full file for context:\n```\n' .. context.full_file_content .. '\n```'
+  local full_query = build_query_with_context(query, context)
 
   -- Send via main plugin
   local deft = require('deft')

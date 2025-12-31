@@ -83,22 +83,22 @@ export function validatePath(
 
     // Check if normalized path is exactly the working directory
     if (normalizedFull === normalizedWorking) {
-      printDebug(`[validatePath] âœ" Exact match with working directory`);
+      printDebug(`[validatePath] Exact match with working directory`);
       return { valid: true, fullPath: normalizedFull };
     }
 
     // Check if path starts with working directory + separator (subdirectory)
     if (!normalizedFull.startsWith(workingWithSep)) {
       printInfo(
-        `[validatePath] âœ— Path outside working directory: "${normalizedFull}" does not start with "${workingWithSep}"`,
+        `[validatePath] Path outside working directory: "${normalizedFull}" does not start with "${workingWithSep}"`,
       );
       return { valid: false, error: "Path outside working directory" };
     }
 
-    printDebug(`[validatePath] âœ" Path is within working directory`);
+    printDebug(`[validatePath] " Path is within working directory`);
     return { valid: true, fullPath: normalizedFull };
   } catch (error) {
-    printError(`[validatePath] âœ— Exception: ${(error as Error).message}`);
+    printError(`[validatePath] Exception: ${(error as Error).message}`);
     return { valid: false, error: `Invalid path: ${(error as Error).message}` };
   }
 }
@@ -195,14 +195,14 @@ export function createServer(config: MCPServerConfig) {
 
           const tool = config.tools.find((t) => t.name === toolParams.name);
           if (tool === null || tool === undefined) {
-            printError(`[MCP Server] âŒ Tool not found: ${toolParams.name}`);
+            printError(`[MCP Server] Tool not found: ${toolParams.name}`);
             throw new Error(`Tool not found: ${toolParams.name}`);
           }
 
           printDebug(`[MCP Server] Executing tool handler...`);
           const result = await tool.handler(toolParams.arguments, context);
 
-          printDebug(`[MCP Server] âœ" Tool execution complete`);
+          printDebug(`[MCP Server] Tool execution complete`);
           printDebug(
             `[MCP Server]   Result: ${JSON.stringify(result, null, 2)}`,
           );
@@ -211,12 +211,12 @@ export function createServer(config: MCPServerConfig) {
           break;
         }
         default:
-          printError(`[MCP Server] âŒ Unknown method: ${method}`);
+          printError(`[MCP Server] Unknown method: ${method}`);
           throw new Error(`Unknown method: ${method}`);
       }
     } catch (error) {
       printError(
-        `[MCP Server] âŒ Error handling request ${id}:`,
+        `[MCP Server] Error handling request ${id}:`,
         (error as Error).message,
       );
       printError(`[MCP Server]    Stack: ${(error as Error).stack}`);

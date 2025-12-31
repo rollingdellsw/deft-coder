@@ -17,7 +17,6 @@ M.state = {
   terminal_job_id = nil,
   ipc_client = nil,
   working_dir = nil,
-  terminal_hidden = true, -- Default to hidden state conceptually
 }
 
 -- Configuration defaults
@@ -58,6 +57,14 @@ function M.setup(opts)
   M.setup_autocmds()
 end
 
+---Build the split command based on config
+---@return string vim command for creating split
+local function build_split_cmd()
+  return (M.config.split_position == 'vertical') and
+         ('rightbelow ' .. M.config.split_size .. 'vsplit') or
+         ('rightbelow ' .. M.config.split_size .. 'split')
+end
+
 ---Launch Deft in a terminal split
 ---@param auto_focus boolean|nil If true, stay in terminal and enter insert mode (default: true)
 function M.launch_deft(auto_focus)
@@ -68,10 +75,7 @@ function M.launch_deft(auto_focus)
     return
   end
 
-  -- Create terminal split
-  local split_cmd = (M.config.split_position == 'vertical') and
-                    ('rightbelow ' .. M.config.split_size .. 'vsplit') or
-                    ('rightbelow ' .. M.config.split_size .. 'split')
+  local split_cmd = build_split_cmd()
 
   local orig_winnr = vim.api.nvim_get_current_win()
 
@@ -254,7 +258,6 @@ function M.start_deft_normal_mode()
       -- Visible -> Hide it
       if vim.api.nvim_win_is_valid(visible_win) then
         vim.api.nvim_win_hide(visible_win)
-        M.state.terminal_hidden = true
       end
     end
   end
@@ -288,15 +291,11 @@ end
 function M.show_terminal()
   if not M.state.session_active then return false end
   if M.state.terminal_bufnr and not M.is_terminal_visible_in_current_tab() then
-    local split_cmd = (M.config.split_position == 'vertical') and
-                      ('rightbelow ' .. M.config.split_size .. 'vsplit') or
-                      ('rightbelow ' .. M.config.split_size .. 'split')
-    vim.cmd(split_cmd)
+    vim.cmd(build_split_cmd())
     vim.api.nvim_win_set_buf(0, M.state.terminal_bufnr)
     M.state.terminal_winnr = vim.api.nvim_get_current_win()
     vim.api.nvim_win_set_option(M.state.terminal_winnr, 'number', false)
     vim.api.nvim_win_set_option(M.state.terminal_winnr, 'relativenumber', false)
-    M.state.terminal_hidden = false
     return true
   end
   return false

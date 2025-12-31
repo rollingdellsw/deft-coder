@@ -454,7 +454,6 @@ export class LSPClient {
 
       let settleTimer: NodeJS.Timeout | undefined;
 
-      // CHANGE: Removed 'diagnostics' parameter to fix TS6133
       this.diagnosticWaiters.set(uri, () => {
         if (settled) return;
 

@@ -27,14 +27,14 @@ export const createDirectoryTool: ToolHandler = {
       recursive?: boolean;
     };
 
-    printError(
+    printDebug(
       `[create_directory] Request to create: ${dirPath} (recursive: ${recursive})`,
     );
 
     const validation = validatePath(dirPath, context.workingDirectory);
     if (!validation.valid) {
       printError(
-        `[create_directory] âŒ Validation failed: ${validation.error}`,
+        `[create_directory] ✗ Validation failed: ${validation.error}`,
       );
       return {
         content: [
@@ -49,12 +49,12 @@ export const createDirectoryTool: ToolHandler = {
 
     try {
       await fs.mkdir(validation.fullPath as string, { recursive });
-      printDebug(`[create_directory] âœ" Successfully created: ${dirPath}`);
+      printDebug(`[create_directory] ✓ Successfully created: ${dirPath}`);
       return {
         content: [{ type: "text", text: `Created directory: ${dirPath}` }],
       };
     } catch (error) {
-      printError(`[create_directory] âŒ Error: ${(error as Error).message}`);
+      printError(`[create_directory] Error: ${(error as Error).message}`);
       return {
         content: [
           {

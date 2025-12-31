@@ -1456,7 +1456,9 @@ function M.setup_diff_keymaps()
           local patch_hunk_idx = M.vim_to_patch_hunk_map[vim_hunk_idx]
 
           if patch_hunk_idx == nil then
-            print(string.format('[NVIM DEBUG] WARNING: No patch mapping for vim hunk %d', vim_hunk_idx))
+            if M.debug_enabled then
+              vim.notify(string.format('No patch mapping for vim hunk %d', vim_hunk_idx), vim.log.levels.WARN)
+            end
             patch_hunk_idx = vim_hunk_idx
           end
 
@@ -1479,9 +1481,6 @@ function M.setup_diff_keymaps()
               table.insert(existing.messages, rejection_msg)
             end
           end
-
-          print(string.format('[NVIM DEBUG] âš ï¸  REJECTION RECORDED for PATCH hunk %d (vim %d) in %s: %s',
-            patch_hunk_idx, vim_hunk_idx, current_file.filepath, rejection_msg))
 
           -- Track vim hunk as reviewed (for completion checking)
           if not current_file.vim_hunks_reviewed then
@@ -1541,13 +1540,6 @@ end
 ---Send all file decisions to Deft
 ---Send all file decisions to Deft
 function M.send_all_decisions()
-  print('[NVIM DEBUG] send_all_decisions called')
-
-  print('[NVIM DEBUG] ========== REVIEW STATE DUMP ==========')
-  print(string.format('[NVIM DEBUG] Total files: %d', #M.review_state.files))
-  print(string.format('[NVIM DEBUG] Request ID: %s', M.current_diff and M.current_diff.requestId or 'nil'))
-  print('[NVIM DEBUG] =====================================')
-
   if not M.ipc_client or not M.current_diff then
     vim.notify('Cannot send decisions - no IPC connection', vim.log.levels.ERROR)
     return

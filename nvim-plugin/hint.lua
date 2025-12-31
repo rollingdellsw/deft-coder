@@ -46,7 +46,7 @@ end
 ---Cancel scheduled hint
 function M.cancel_scheduled()
   if M.hint_timer then
-    -- Timer already fired or cancelled, just nil it
+    pcall(vim.fn.timer_stop, M.hint_timer)
     M.hint_timer = nil
   end
 end
@@ -58,6 +58,7 @@ function M.schedule_hide(timeout_ms)
 
   -- Cancel any existing hide timer
   if M.hide_timer then
+    pcall(vim.fn.timer_stop, M.hide_timer)
     M.hide_timer = nil
   end
 
