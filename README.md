@@ -84,7 +84,9 @@ Every LLM can generate code. But getting that code into your codebase? This is w
 
 Besides being a standalone CLI, Deft™ can also work within Neovim as a plugin. In both modes, it provides per-hunk interactive change review capability.
 
-https://github.com/user-attachments/assets/c5dbfa70-e532-4624-a392-71c5eefd63d9
+
+https://github.com/user-attachments/assets/1e392974-7f16-435f-a044-7b150278df3d
+
 
 When working with Neovim, select any code, press `<leader>ca`, ask questions or request changes, then review in the native diff view.
 
