@@ -1,0 +1,19 @@
+# Release v1.0.4
+
+- Enable ripgrep as backup strategy for search_code.
+- Refine Neovim diff UI aesthetics.
+- Refactor UI architecture to use stdout-based rendering (fixes flickering/performance).
+- Fix session flickering during streaming via windowed rendering strategy.
+- Fix /branch and /load commands synchronization and session directory handling.
+- Refine LSP MCP server test scripts.
+- Add maxSessionStorageMb configuration option.
+- Add expand/collapse toggle for branch selector.
+- Fix LSP workspace symbol search and language-aware project initialization.
+- Enable reasoning parameter for OpenRouter based on thinking config.
+- Enhance OpenAI debug logging for reasoning items.
+- Allow listing available configurations via config option.
+- Fix bug where thinking config was lost during LLM client reconfiguration (Claude).
+- Fix Neovim plugin multi-file diff review logic (hunk tracking/rejection).
+- Enable syntax highlighting for Neovim diff view.
+- Fix UI focus issue: bring window to foreground on external query.
+- Fix and validate IPC schema.

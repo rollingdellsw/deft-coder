@@ -76,6 +76,71 @@ function M.get_selection()
   }
 end
 
+---Show a multi-line input box that auto-expands
+---@param title string Window title
+---@param on_submit function Callback(text)
+---@param on_cancel function|nil Callback()
+function M.show_multiline_input(title, on_submit, on_cancel)
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_option(buf, 'bufhidden', 'wipe')
+  vim.api.nvim_buf_set_option(buf, 'filetype', 'markdown') -- Syntax highlighting
+
+  local width = math.min(60, vim.o.columns - 4)
+  local max_height = 15
+  local height = 1
+
+  local row = math.floor((vim.o.lines - height) / 2)
+  local col = math.floor((vim.o.columns - width) / 2)
+
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = 'editor',
+    width = width,
+    height = height,
+    row = row,
+    col = col,
+    style = 'minimal',
+    border = 'rounded',
+    title = ' ' .. title .. ' ',
+    title_pos = 'center',
+    footer = ' Enter: New Line | Ctrl+S: Submit ',
+    footer_pos = 'center',
+  })
+
+  -- Auto-resize window as user types
+  vim.api.nvim_create_autocmd({'TextChanged', 'TextChangedI'}, {
+    buffer = buf,
+    callback = function()
+      if not vim.api.nvim_win_is_valid(win) then return end
+      local line_count = vim.api.nvim_buf_line_count(buf)
+      local new_height = math.min(math.max(1, line_count), max_height)
+
+      -- Keep centered vertically
+      local new_row = math.floor((vim.o.lines - new_height) / 2)
+      vim.api.nvim_win_set_config(win, {
+        relative = 'editor',
+        row = new_row,
+        col = col,
+        height = new_height
+      })
+    end
+  })
+
+  local function submit()
+    local lines = vim.api.nvim_buf_get_lines(buf, 0, -1, false)
+    local text = vim.trim(table.concat(lines, '\n'))
+    vim.api.nvim_win_close(win, true)
+    if on_submit then on_submit(text) end
+  end
+
+  local opts = { buffer = buf, silent = true }
+  vim.keymap.set({'i', 'n'}, '<C-s>', submit, opts)
+  vim.keymap.set('n', '<Esc>', function()
+    vim.api.nvim_win_close(win, true)
+    if on_cancel then on_cancel() end
+  end, opts)
+  vim.cmd('startinsert')
+end
+
 ---Prompt user for instruction in Neovim, then send with context
 ---@param on_complete function|nil Callback called after message is sent (for focus management)
 function M.prompt_and_send(on_complete)
@@ -93,16 +158,10 @@ function M.prompt_and_send(on_complete)
   local hint_module = require('deft.hint')
   hint_module.hide()
 
-  -- Prompt user for instruction in Neovim
-  vim.ui.input({
-    prompt = '💬 What would you like to do with this code? ',
-    default = '',
-  }, function(instruction)
-    -- User cancelled
-    if not instruction or instruction == '' then
-      vim.notify('Cancelled', vim.log.levels.INFO)
-      return
-    end
+  -- Use new multi-line input
+  M.show_multiline_input('What would you like to do?', function(instruction)
+    -- Build the complete message with context + instruction
+    -- Note: instruction can now be multi-line
 
     -- Build the complete message with context + instruction
     local query = instruction .. '\n\n' ..

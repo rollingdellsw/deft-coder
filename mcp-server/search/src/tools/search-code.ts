@@ -348,6 +348,9 @@ async function searchCode(
   const start = params.start ?? 0;
   const contextLines = Math.min(params.context_lines ?? 3, 5);
 
+  // Track if we should skip ripgrep (LSP returned valid results)
+  let lspSucceeded = false;
+
   // LSP-based search for definitions and references
   if (searchType === "definition" || searchType === "references") {
     try {
@@ -370,55 +373,64 @@ async function searchCode(
         if (client) {
           printDebug(`[Search] Using backend: lsp`);
           const symbols = await client.getWorkspaceSymbols(query);
+          printDebug(`[Search] LSP returned ${symbols.length} symbols`);
 
-          // Resolve full search path for filtering
-          const validation = validatePath(searchPath, workingDir);
-          const fullSearchPath = validation.valid
-            ? validation.fullPath!
-            : path.resolve(workingDir, searchPath);
+          // Only use LSP results if we got some symbols
+          if (symbols.length > 0) {
+            // Resolve full search path for filtering
+            const pathValidation = validatePath(searchPath, workingDir);
+            const fullSearchPath = pathValidation.valid
+              ? pathValidation.fullPath!
+              : path.resolve(workingDir, searchPath);
 
-          let results = symbols.map((symbol) => ({
-            file_path: symbol.location.uri.replace("file://", ""),
-            line_number: symbol.location.range.start.line + 1,
-            column: symbol.location.range.start.character + 1,
-            match_text: symbol.name,
-            context: `Symbol: ${symbol.name} (kind: ${symbol.kind})`,
-          }));
+            let results = symbols.map((symbol) => ({
+              file_path: symbol.location.uri.replace("file://", ""),
+              line_number: symbol.location.range.start.line + 1,
+              column: symbol.location.range.start.character + 1,
+              match_text: symbol.name,
+              context: `Symbol: ${symbol.name} (kind: ${symbol.kind})`,
+            }));
 
-          // Apply path filter (LSP returns workspace-wide results)
-          if (searchPath !== ".") {
-            results = results.filter((r) =>
-              r.file_path.startsWith(fullSearchPath),
+            // Apply path filter (LSP returns workspace-wide results)
+            if (searchPath !== ".") {
+              results = results.filter((r) =>
+                r.file_path.startsWith(fullSearchPath),
+              );
+            }
+
+            // Apply file_types filter
+            if (fileTypes.length > 0) {
+              results = results.filter((r) => {
+                const ext = path.extname(r.file_path).slice(1); // Remove leading dot
+                return fileTypes.includes(ext);
+              });
+            }
+
+            // Apply exclude_paths filter
+            if (excludePaths.length > 0) {
+              results = results.filter((r) => {
+                return !excludePaths.some((pattern) =>
+                  r.file_path.includes(pattern),
+                );
+              });
+            }
+
+            lspSucceeded = true;
+            return {
+              results: results.slice(start, start + maxResults),
+              total_count: results.length,
+              search_backend: "lsp",
+            };
+          } else {
+            printDebug(
+              "[Search] LSP returned no symbols, falling back to ripgrep.",
             );
           }
-
-          // Apply file_types filter
-          if (fileTypes.length > 0) {
-            results = results.filter((r) => {
-              const ext = path.extname(r.file_path).slice(1); // Remove leading dot
-              return fileTypes.includes(ext);
-            });
-          }
-
-          // Apply exclude_paths filter
-          if (excludePaths.length > 0) {
-            results = results.filter((r) => {
-              return !excludePaths.some((pattern) =>
-                r.file_path.includes(pattern),
-              );
-            });
-          }
-
-          return {
-            results: results.slice(start, start + maxResults),
-            total_count: results.length,
-            search_backend: "lsp",
-          };
         }
       }
-      printDebug(
-        "[Search] LSP not available, falling back to ripgrep (text-based, non-semantic).",
-      );
+      if (!lspSucceeded) {
+        printDebug("[Search] LSP not available, falling back to ripgrep.");
+      }
     } catch (error) {
       printDebug(
         `[DEBUG search-code] LSP search failed: ${(error as Error).message}\n${(error as Error).stack}`,

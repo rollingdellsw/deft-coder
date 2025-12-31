@@ -313,16 +313,24 @@ Note: Pass the git subcommand without the `git` prefix.
 | `search_and_replace`  | Bulk find/replace across files                    |
 | `get_lsp_diagnostics` | Get build errors/warnings for a file              |
 
+**LSP Backend Limitation:**
+
+The `search_code` tool attempts to use LSP (Language Server Protocol) for `definition` and `references` search types. However, LSP-based workspace symbol search only works when Deft is running from within the target TypeScript project directory. In monorepos with multiple independent `tsconfig.json` projects, the LSP server can only index one project at a time.
+
+When LSP is unavailable or returns no results, `search_code` automatically falls back to ripgrep for text-based searching, which works across all files regardless of project structure.
+
+For reliable cross-project symbol searching in monorepos, use `search_type: "text"` with word boundary matching, or run Deft from within the specific package directory.
+
 **Examples:**
 
 ```javascript
 // Text search
 search_code({ query: "handleClick", search_type: "text" });
 
-// Find definition
+// Find definition (LSP when available, ripgrep fallback)
 search_code({ query: "UserService", search_type: "definition" });
 
-// Find references
+// Find references (LSP when available, ripgrep fallback)
 search_code({ query: "authenticate", search_type: "references" });
 
 // Regex search

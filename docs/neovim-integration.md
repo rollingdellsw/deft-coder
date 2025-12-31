@@ -8,24 +8,30 @@ This guide covers setting up and using Deft as a Neovim-integrated coding assist
 
 ## Quick Start
 
-### 1. Confirm it's installed by npm install:
+### 1. Confirm Installation
+
+Ensure the plugin files exist in your Neovim configuration:
 
 ```bash
 ls ~/.config/nvim/lua/deft/
+
 ```
 
-### 2. Confirm it's enabled by npm install:
+### 2. Enable Plugin
 
-cat `~/.config/nvim/init.lua`:
+Add the following to your `init.lua`:
 
 ```lua
 require('deft').setup()
+
 ```
 
 ### 3. Start Using
 
-- **Visual mode**: Select code → `<leader>ca` → Enter your instruction
-- **Normal mode**: `<leader>ca` → Opens/focuses Deft terminal
+- **Smart Toggle (`<leader>ca`)**:
+- **Normal Mode**: Opens the Deft terminal. If open, it hides it (toggles visibility).
+- **Visual Mode**: Takes selected code and opens the query prompt.
+- **Terminal Mode**: Hides the Deft terminal (returns to your code).
 
 ---
 
@@ -50,26 +56,19 @@ require('deft').setup()
 │                          Deft Agent                             │
 │  Processes queries, calls LLM, generates patches                │
 └─────────────────────────────────────────────────────────────────┘
+
 ```
 
-**Communication Flow:**
+**Workflow:**
 
-1. Select code in Neovim, press `<leader>ca`, enter instruction
-2. Plugin sends context (selected code + full file) to Deft via IPC
-3. Deft processes with LLM, generates patches
-4. Patches appear in native Neovim diff view for review
-5. Accept (`a`) or reject (`r`) each hunk
-6. Confirmed changes are applied to files
+1. **Chat**: Press `<leader>ca` to toggle the agent terminal. Ask questions like "How do I fix this?"
+2. **Edit**: Select code, press `<leader>ca`. Type "Refactor this to use async/await."
+3. **Review**: Deft proposes changes. A native Neovim Diff View opens.
+4. **Decide**: Use `a` (Accept) or `r` (Reject) on specific changes.
 
 ---
 
 ## Configuration
-
-### Minimal Setup
-
-```lua
-require('deft').setup()
-```
 
 ### Full Configuration
 
@@ -80,40 +79,22 @@ require('deft').setup({
 
   -- Terminal split configuration
   split_position = 'vertical',  -- 'vertical' or 'horizontal'
-  split_size = 80,              -- Width (vertical) or height (horizontal)
+  split_size = 80,              -- Initial width/height
 
   -- Keymaps
   keymaps = {
-    code_query = '<leader>ca',  -- Ask about selected code
+    code_query = '<leader>ca',  -- Smart toggle / Ask about selection
   },
 
   -- Visual selection hint (floating window)
   show_hint = false,            -- Show hint when entering visual mode
   hint_delay = 500,             -- Delay before showing hint (ms)
 
-  -- Auto-hide terminal when focus leaves (default: true)
-  auto_hide = true,             -- Terminal auto-hides when you switch to code
-
   -- Debug mode (verbose logging, default: false)
   debug = false,
 })
+
 ```
-
-### Debug Mode
-
-Enable to troubleshoot issues:
-
-```lua
-require('deft').setup({
-  debug = true,
-})
-```
-
-This will:
-
-- Log IPC messages to `:messages`
-- Run Deft with `--verbose` flag
-- Show socket connection details
 
 ---
 
@@ -124,13 +105,14 @@ This will:
 | Mode   | Key          | Action                                   |
 | ------ | ------------ | ---------------------------------------- |
 | Visual | `<leader>ca` | Send selected code + instruction to Deft |
-| Normal | `<leader>ca` | Start Deft or focus terminal             |
+| Normal | `<leader>ca` | **Toggle** Deft terminal (Show/Hide)     |
+| Term   | `<leader>ca` | **Toggle** Deft terminal (Hide)          |
 
 ### Terminal Keymaps
 
 | Key     | Action                                    |
 | ------- | ----------------------------------------- |
-| `<C-o>` | Exit terminal, return to code window      |
+| `<C-o>` | Exit terminal focus, return to code       |
 | `<Esc>` | Send ESC to Deft (for its internal modes) |
 
 ### Diff Review Keymaps
@@ -149,35 +131,25 @@ This will:
 
 ## Diff Review Workflow
 
-When Deft proposes changes via the `patch` or `write_file` tool:
+When Deft proposes changes via the `patch` tool:
 
-1. **Diff View Opens**: Side-by-side comparison (old left, new right)
-2. **Navigate Hunks**: Use `j`/`k` to move between changes
-3. **Review Each Hunk**:
-   - Press `a` to accept
-   - Press `r` to reject (optionally provide reason)
-4. **Multi-file Patches**: Use `<leader>sf` to switch files
-5. **Submit**: Press `<leader>d` when done reviewing
+1. **Diff View Opens**: The plugin temporarily hides your code windows to show a clean [Old] | [New] diff view alongside the Agent.
+2. **Review**: Use `j`/`k` to navigate changes.
+3. **Reject with Reason**: Pressing `r` opens a multi-line input box. You can explain _why_ you are rejecting it (e.g., "This introduces a security flaw"), and Deft will use that feedback to retry.
+4. **Finish**: Press `<leader>d` to submit. Your code windows are restored exactly as they were.
 
 **File Selector** (for multi-file patches):
 
 ```
-╔═══════════════════════════════════════════════════════════╗
-║  Select File to Review                              [3/5] ║
-╠═══════════════════════════════════════════════════════════╣
+╭─ Patch Review (3 files) ───────────────╮
+│  ●  [2/3]  src/auth.ts                 │
+│  ✓  [3/3]  src/utils.ts                │
+│     [0/1]  tests/auth.test.ts          │
+│                                        │
+│  a:Accept r:Reject s:Submit q:Cancel   │
+╰────────────────────────────────────────╯
 
- ●  [2/3]  src/auth.ts
- ✓  [3/3]  src/utils.ts
-    [0/1]  tests/auth.test.ts
-
-╠═══════════════════════════════════════════════════════════╣
-║  ↑/↓ Navigate  Enter Select  ESC Cancel                   ║
-╚═══════════════════════════════════════════════════════════╝
 ```
-
-- `●` = Current file
-- `✓` = All hunks reviewed
-- `[n/m]` = Reviewed/total hunks
 
 ---
 
@@ -185,169 +157,28 @@ When Deft proposes changes via the `patch` or `write_file` tool:
 
 | Command       | Description                          |
 | ------------- | ------------------------------------ |
-| `:DeftStart`  | Start Deft session in terminal split |
-| `:DeftStop`   | Stop Deft session                    |
-| `:DeftShow`   | Show hidden terminal                 |
+| `:DeftStart`  | Start Deft session                   |
+| `:DeftStop`   | Stop Deft session and close terminal |
 | `:DeftToggle` | Toggle terminal visibility           |
 | `:DeftStatus` | Show connection status               |
 
 ---
 
-## Usage Examples
-
-### Ask About Code
-
-1. Select code in visual mode
-2. Press `<leader>ca`
-3. Type: "Explain this function"
-4. Deft responds in terminal
-
-### Request Changes
-
-1. Select code in visual mode
-2. Press `<leader>ca`
-3. Type: "Add input validation here"
-4. Review proposed changes in diff view
-5. Accept or reject each hunk
-
-### Quick Chat (No Selection)
-
-1. Press `<leader>ca` in normal mode
-2. Terminal opens/focuses
-3. Type directly to Deft
-
----
-
 ## Troubleshooting
+
+### "Deft exited with code 129"
+
+This usually meant the process was killed when the window closed. The latest version fixes this by keeping the buffer alive in the background. If you see this, ensure you have updated `init.lua` to remove the `WinClosed` autocommand.
 
 ### "Command not found: deft"
 
-The Deft executable isn't in PATH.
-
-**Solution**: Use full path in config (get from 'which deft'):
+The Deft executable isn't in PATH. Use the full path in your config:
 
 ```lua
-require('deft').setup({
-  deft_command = '/usr/local/bin/deft',
-})
-```
+require('deft').setup({ deft_command = '/home/user/bin/deft' })
 
-### "Failed to connect to Deft"
-
-IPC connection failed.
-
-**Possible causes:**
-
-- Deft didn't start properly
-- IPC not enabled in Deft config
-
-**Solutions:**
-
-1. Check Deft output:
-
-```vim
-:messages
-```
-
-2. Verify IPC is enabled in `~/.config/deft/config.json`:
-
-```json
-{
-  "agent": {
-    "ipc": { "enabled": true }
-  }
-}
-```
-
-3. Enable debug mode:
-
-```lua
-require('deft').setup({ debug = true })
-```
-
-### Terminal Appears in Wrong Position
-
-**Solution**: Adjust split configuration:
-
-```lua
-require('deft').setup({
-  split_position = 'vertical',  -- or 'horizontal'
-  split_size = 100,             -- Adjust width/height
-})
 ```
 
 ### Diff View Layout Issues
 
-If diff windows appear with unequal sizes, this is usually resolved automatically. If issues persist:
-
-1. Close the diff view
-2. Use `:DeftToggle` to hide/show terminal
-3. Retry the operation
-
-### ESC Key Not Working in Terminal
-
-The plugin remaps ESC to pass through to Deft. To exit terminal mode:
-
-- Use `<C-o>` (Ctrl+O) to return to code window
-- Use `<C-\><C-n>` for standard Neovim terminal escape
-
----
-
-## Plugin Architecture
-
-### File Structure
-
-```
-~/.config/nvim/lua/deft/
-├── init.lua      # Main plugin entry, setup, commands
-├── ipc.lua       # TCP socket communication with Deft
-├── diff.lua      # Diff viewer and review UI
-├── query.lua     # Code selection and query formatting
-└── hint.lua      # Visual mode floating hint
-```
-
-### IPC Protocol
-
-Communication uses newline-delimited JSON over TCP:
-
-**Messages from Neovim → Deft:**
-
-- `code_query`: Send code context and user instruction
-- `confirmation_response`: Accept/reject patch hunks
-
-**Messages from Deft → Neovim:**
-
-- `show_diff`: Display diff for review
-
-See `ipc_schema.json` for full message schemas.
-
----
-
-## Requirements
-
-- **Neovim** ≥ 0.8.0
-- **Deft** installed and configured
-
----
-
-## Tips
-
-### Efficient Review Workflow
-
-1. Review multi-file patches file-by-file using `<leader>sf`
-2. Use `a` to quickly accept obvious changes
-3. Use `r` with detailed reasons for rejections - these are sent back to the LLM
-
-### Terminal Management
-
-- Terminal auto-hides when you switch to code (with `auto_hide = true`)
-- Use `<leader>ca` in normal mode to quickly re-show it
-- `:DeftToggle` works from any window
-
-### Combining with Deft Commands
-
-In the Deft terminal, you can use:
-
-- `/attach <file>` to add context
-- `/save` to checkpoint your session
-- `/branch` to try alternative approaches
+If the windows look "cramped" or the wrong size, the plugin now uses `wincmd =` to naturally balance them based on your screen size. You can resize them manually during review; the plugin will not force them back until you reopen the view.

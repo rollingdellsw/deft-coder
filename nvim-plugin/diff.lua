@@ -67,36 +67,30 @@ end
 function M.save_and_hide_source_windows()
   M.saved_source_windows = {}
 
+  -- Robustly identify terminal buffer to prevent accidental closing
+  local ok, deft = pcall(require, 'deft')
+  local term_bufnr = ok and deft.state.terminal_bufnr or -1
+
   -- Get all windows in current tab
   local all_wins = vim.api.nvim_tabpage_list_wins(0)
 
   for _, winnr in ipairs(all_wins) do
-    -- Skip if it's the Deft terminal window
-    if winnr ~= M.deft_terminal_winnr then
+    local config = vim.api.nvim_win_get_config(winnr)
+
+    -- Skip floating windows
+    if config.relative == '' then
       local bufnr = vim.api.nvim_win_get_buf(winnr)
-      local bufname = vim.api.nvim_buf_get_name(bufnr)
-      local buftype = vim.api.nvim_buf_get_option(bufnr, 'buftype')
 
-      -- Only save regular file buffers (not special buffers)
-      if buftype == '' or buftype == 'acwrite' then
+      -- If this is the Deft terminal buffer, update our ref and KEEP IT OPEN
+      if bufnr == term_bufnr then
+        M.deft_terminal_winnr = winnr
+      else
+        -- It's a source window: save and close it
         table.insert(M.saved_source_windows, {
-          winnr = winnr,
           bufnr = bufnr,
-          bufname = bufname,
-          was_visible = vim.api.nvim_win_is_valid(winnr),
         })
-
-        if M.debug_enabled then
-          vim.notify('[Deft Diff] Saving source window: ' .. bufname, vim.log.levels.INFO)
-        end
+        pcall(vim.api.nvim_win_close, winnr, false)
       end
-    end
-  end
-
-  -- Close all saved windows
-  for _, win_info in ipairs(M.saved_source_windows) do
-    if vim.api.nvim_win_is_valid(win_info.winnr) then
-      vim.api.nvim_win_close(win_info.winnr, false)
     end
   end
 end
@@ -118,7 +112,7 @@ function M.show(message, ipc_client, deft_winnr)
   M.ipc_client = ipc_client
   M.deft_terminal_winnr = deft_winnr
 
-  -- Save and hide source windows before showing diff
+  -- Save and hide source windows to prevent clutter (4+ panels)
   M.save_and_hide_source_windows()
 
   -- Initialize review state for multi-file patches
@@ -345,15 +339,8 @@ function M.show_multi_file_selector(message)
   vim.api.nvim_buf_set_option(buf, 'swapfile', false)
   vim.api.nvim_buf_set_option(buf, 'modifiable', true)
 
-  -- Build content
-  local lines = {
-    '╔═══════════════════════════════════════════════════════════╗',
-    '║         MULTI-FILE PATCH REVIEW                           ║',
-    '╚═══════════════════════════════════════════════════════════╝',
-    '',
-    string.format('Reviewing %d file(s) in this patch:', #M.review_state.files),
-    '',
-  }
+  -- Build content (Clean list without ASCII borders)
+  local lines = {}
 
   -- Add file list
   for i, file in ipairs(M.review_state.files) do
@@ -364,20 +351,8 @@ function M.show_multi_file_selector(message)
     end
 
     local file_type = file.is_new_file and '(new)' or ''
-    table.insert(lines, string.format('%s %d. %s %s', status, i, file.filepath, file_type))
+    table.insert(lines, string.format(' %s %d. %s %s', status, i, file.filepath, file_type))
   end
-
-  table.insert(lines, '')
-  table.insert(lines, '─────────────────────────────────────────────────────────')
-  table.insert(lines, 'Commands:')
-  table.insert(lines, '  <Enter>  - Review/view file')
-  table.insert(lines, '  a        - Accept current file')
-  table.insert(lines, '  r        - Reject current file')
-  table.insert(lines, '  <leader>a - Accept all files')
-  table.insert(lines, '  <leader>r - Reject all files')
-  table.insert(lines, '  s        - Submit decisions')
-  table.insert(lines, '  q/ESC    - Cancel (reject all)')
-  table.insert(lines, '─────────────────────────────────────────────────────────')
 
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.api.nvim_buf_set_option(buf, 'modifiable', false)
@@ -386,7 +361,7 @@ function M.show_multi_file_selector(message)
   local width = vim.o.columns
   local height = vim.o.lines
   local win_width = math.min(65, width - 4)
-  local win_height = math.min(#lines, height - 4)
+  local win_height = math.min(#lines, height - 10)
   local row = math.floor((height - win_height) / 2)
   local col = math.floor((width - win_width) / 2)
 
@@ -397,7 +372,11 @@ function M.show_multi_file_selector(message)
     row = row,
     col = col,
     style = 'minimal',
-    border = 'none',
+    border = 'rounded',
+    title = string.format(' Patch Review (%d files) ', #M.review_state.files),
+    title_pos = 'center',
+    footer = ' a:Accept r:Reject s:Submit q:Cancel ',
+    footer_pos = 'center',
   })
 
   M.file_selector_bufnr = buf
@@ -562,14 +541,8 @@ function M.show_file_selector()
 
   local total_hunks, reviewed_hunks = M.count_all_hunks()
   local counter_text = string.format('[%d/%d]', reviewed_hunks, total_hunks)
-  local title_text = '  Select File to Review'
-  local padding = string.rep(' ', 59 - #title_text - #counter_text)
-  local lines = {
-    '╔═══════════════════════════════════════════════════════════╗',
-    string.format('║%s%s%s║', title_text, padding, counter_text),
-    '╠═══════════════════════════════════════════════════════════╣',
-    '',
-  }
+
+  local lines = {}
 
   -- Add file entries
   for i, file in ipairs(M.review_state.files) do
@@ -589,15 +562,10 @@ function M.show_file_selector()
     end
 
     local progress = string.format('[%d/%d]', reviewed_count, file.total_hunks)
-    local file_line = string.format('%s %-7s  %s', status_symbol, progress, file.filepath)
-
+    local file_line = string.format(' %s %-7s  %s', status_symbol, progress, file.filepath)
     table.insert(lines, file_line)
   end
 
-  table.insert(lines, '')
-  table.insert(lines, '╠═══════════════════════════════════════════════════════════╣')
-  table.insert(lines, '║  ↑/↓ Navigate  Enter Select  ESC Cancel                   ║')
-  table.insert(lines, '╚═══════════════════════════════════════════════════════════╝')
 
   vim.api.nvim_buf_set_lines(buf, 0, -1, false, lines)
   vim.api.nvim_buf_set_option(buf, 'modifiable', false)
@@ -617,7 +585,11 @@ function M.show_file_selector()
     width = win_width,
     height = win_height,
     style = 'minimal',
-    border = 'none',
+    border = 'rounded',
+    title = ' Select File to Review ' .. counter_text .. ' ',
+    title_pos = 'center',
+    footer = ' Enter:Select q:Cancel ',
+    footer_pos = 'center',
   })
 
   M.file_selector_bufnr = buf
@@ -628,42 +600,19 @@ function M.show_file_selector()
   vim.api.nvim_win_set_option(win, 'number', false)
   vim.api.nvim_win_set_option(win, 'relativenumber', false)
 
-  -- Position cursor on current file (line 5 = first file, after blank line)
-  local cursor_line = 5 + M.review_state.current_file_index - 1
+  -- Position cursor on current file (1-based index directly matches line number)
+  local cursor_line = M.review_state.current_file_index
   vim.api.nvim_win_set_cursor(win, {cursor_line, 0})
 
   -- Setup keymaps for file selector navigation
   local opts = { buffer = buf, silent = true, noremap = true }
 
-  -- j/k and Up/Down navigation
-  local function move_up()
-    local cursor = vim.api.nvim_win_get_cursor(win)
-    local line = cursor[1]
-    if line > 5 then
-      vim.api.nvim_win_set_cursor(win, {line - 1, 0})
-    end
-  end
-
-  local function move_down()
-    local cursor = vim.api.nvim_win_get_cursor(win)
-    local line = cursor[1]
-    local last_file_line = 5 + #M.review_state.files - 1
-    if line < last_file_line then
-      vim.api.nvim_win_set_cursor(win, {line + 1, 0})
-    end
-  end
-
-  vim.keymap.set('n', 'k', move_up, opts)
-  vim.keymap.set('n', 'j', move_down, opts)
-  vim.keymap.set('n', '<Up>', move_up, opts)
-  vim.keymap.set('n', '<Down>', move_down, opts)
-
   -- Enter: Jump to selected file
   vim.keymap.set('n', '<CR>', function()
     local cursor = vim.api.nvim_win_get_cursor(win)
     local selected_line = cursor[1]
-    -- File list starts at line 5 (after header, separator, blank line)
-    local file_index = selected_line - 4
+    -- Direct mapping since we removed the header
+    local file_index = selected_line
 
     if file_index >= 1 and file_index <= #M.review_state.files then
       -- Close selector
@@ -827,30 +776,6 @@ function M.show_file_diff(file, hunk_index)
     return
   end
 
-  -- Close existing diff windows first
-  if M.diff_winnr_old and vim.api.nvim_win_is_valid(M.diff_winnr_old) then
-    vim.api.nvim_set_current_win(M.diff_winnr_old)
-    vim.cmd('diffoff')
-    safe_close_win(M.diff_winnr_old)
-    M.diff_winnr_old = nil
-  end
-  if M.diff_winnr_new and vim.api.nvim_win_is_valid(M.diff_winnr_new) then
-    vim.api.nvim_set_current_win(M.diff_winnr_new)
-    vim.cmd('diffoff')
-    safe_close_win(M.diff_winnr_new)
-    M.diff_winnr_new = nil
-  end
-
-  -- Close existing buffers if they exist
-  if M.diff_bufnr_old and vim.api.nvim_buf_is_valid(M.diff_bufnr_old) then
-    vim.api.nvim_buf_delete(M.diff_bufnr_old, {force = true})
-    M.diff_bufnr_old = nil
-  end
-  if M.diff_bufnr_new and vim.api.nvim_buf_is_valid(M.diff_bufnr_new) then
-    vim.api.nvim_buf_delete(M.diff_bufnr_new, {force = true})
-    M.diff_bufnr_new = nil
-  end
-
   -- Save original window/buffer if not already saved
   if not M.original_winnr or not vim.api.nvim_win_is_valid(M.original_winnr) then
     M.original_winnr = vim.api.nvim_get_current_win()
@@ -903,42 +828,61 @@ function M.show_file_diff(file, hunk_index)
   vim.api.nvim_buf_set_name(buf_old, string.format('[Deft Old %d] %s', M.buffer_counter, file.filepath))
   vim.api.nvim_buf_set_name(buf_new, string.format('[Deft New %d] %s', M.buffer_counter, file.filepath))
 
-  -- Calculate window layout
-  -- Strategy: Create two windows and force them to be equal width
-  -- If terminal is hidden, this uses full screen. If visible, it splits remaining space.
+  -- REUSE WINDOWS STRATEGY:
+  -- If diff windows already exist and are valid, reuse them.
+  -- This prevents the "3-panel" bug and screen flicker.
+  local win_old, win_new
 
-  -- Create diff windows
-  -- Old content (left)
-  vim.cmd('leftabove vsplit')
-  local win_old = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(win_old, buf_old)
+  if M.diff_winnr_old and vim.api.nvim_win_is_valid(M.diff_winnr_old) and
+     M.diff_winnr_new and vim.api.nvim_win_is_valid(M.diff_winnr_new) then
 
-  -- New content (right of old)
-  vim.api.nvim_set_current_win(win_old)
-  vim.cmd('rightbelow vsplit')
-  local win_new = vim.api.nvim_get_current_win()
-  vim.api.nvim_win_set_buf(win_new, buf_new)
+    -- Reuse existing windows
+    win_old = M.diff_winnr_old
+    win_new = M.diff_winnr_new
 
-  -- Store window/buffer references
+    vim.api.nvim_win_set_buf(win_old, buf_old)
+    vim.api.nvim_win_set_buf(win_new, buf_new)
+
+    -- Clean up old buffers
+    if M.diff_bufnr_old and vim.api.nvim_buf_is_valid(M.diff_bufnr_old) then
+      vim.api.nvim_buf_delete(M.diff_bufnr_old, {force = true})
+    end
+    if M.diff_bufnr_new and vim.api.nvim_buf_is_valid(M.diff_bufnr_new) then
+      vim.api.nvim_buf_delete(M.diff_bufnr_new, {force = true})
+    end
+
+  else
+    -- Create new split layout
+    -- Ensure we don't split the terminal
+    if M.deft_terminal_winnr and vim.api.nvim_win_is_valid(M.deft_terminal_winnr) then
+      vim.api.nvim_set_current_win(M.deft_terminal_winnr)
+      -- Create split to the left of terminal
+      vim.cmd('leftabove vsplit')
+    else
+      -- Fallback if terminal hidden/invalid
+      vim.cmd('vsplit')
+    end
+
+    win_new = vim.api.nvim_get_current_win() -- Right pane (New)
+    vim.api.nvim_win_set_buf(win_new, buf_new)
+
+    vim.cmd('leftabove vsplit')
+    win_old = vim.api.nvim_get_current_win() -- Left pane (Old)
+    vim.api.nvim_win_set_buf(win_old, buf_old)
+  end
+
+  -- Update state
   M.diff_bufnr_old = buf_old
   M.diff_bufnr_new = buf_new
   M.diff_winnr_old = win_old
   M.diff_winnr_new = win_new
 
   -- Enable diff mode
-  vim.api.nvim_set_current_win(win_old)
-  vim.cmd('diffthis')
-  vim.api.nvim_set_current_win(win_new)
-  vim.cmd('diffthis')
+  vim.api.nvim_win_call(win_old, function() vim.cmd('diffthis') end)
+  vim.api.nvim_win_call(win_new, function() vim.cmd('diffthis') end)
 
   -- Focus on new content window
   vim.api.nvim_set_current_win(win_new)
-
-  -- Force equal width for the two diff windows
-  -- This fixes the layout issue where one window is tiny and the other huge
-  vim.api.nvim_win_set_width(win_old, 1000) -- Expand temporarily
-  vim.api.nvim_win_set_width(win_new, 1000)
-  vim.cmd('wincmd =') -- Equalize all windows (respecting fixed terminal width if set)
 
   -- Highlight and jump to current hunk
   M.highlight_current_hunk()
@@ -1495,15 +1439,12 @@ function M.setup_diff_keymaps()
       end, vim.tbl_extend('force', opts, { desc = 'Accept change' }))
 
       vim.keymap.set('n', 'r', function()
-        -- Prompt for rejection message
-        vim.ui.input({
-          prompt = 'Why reject this hunk? (optional): ',
-          default = ''
-        }, function(input)
-          if input == nil then
-            -- User cancelled (ESC)
-            return
-          end
+        -- Hide command menu while typing
+        M.hide_command_menu()
+
+        -- Prompt for rejection message using multi-line input
+        require('deft.query').show_multiline_input('Why reject this hunk?', function(input)
+          -- input is the text (can be empty)
 
           -- Record rejection for PATCH hunk
           local current_file = M.get_current_file()
@@ -1550,6 +1491,9 @@ function M.setup_diff_keymaps()
 
           -- Advance to next hunk (same logic as accept)
           M.advance_after_decision()
+        end, function()
+          -- On Cancel (Esc): restore the menu
+          M.show_command_menu()
         end)
       end, vim.tbl_extend('force', opts, { desc = 'Reject with message' }))
 
@@ -1740,27 +1684,20 @@ end
 ---Restore saved source windows
 function M.restore_source_windows()
   if #M.saved_source_windows == 0 then
-    if M.debug_enabled then
-      vim.notify('[Deft Diff] No source windows to restore', vim.log.levels.INFO)
-    end
     return
   end
 
-  -- Restore windows from left to right
-  for i, win_info in ipairs(M.saved_source_windows) do
-    if vim.api.nvim_buf_is_valid(win_info.bufnr) then
-      -- Create window next to terminal
-      if M.deft_terminal_winnr and vim.api.nvim_win_is_valid(M.deft_terminal_winnr) then
+  -- Restore windows to the left of the terminal
+  -- Iterate and split relative to the terminal to reconstruct layout
+  if M.deft_terminal_winnr and vim.api.nvim_win_is_valid(M.deft_terminal_winnr) then
+
+    for _, win_info in ipairs(M.saved_source_windows) do
+      if vim.api.nvim_buf_is_valid(win_info.bufnr) then
+        -- Always focus terminal first so 'leftabove' places code to the left
         vim.api.nvim_set_current_win(M.deft_terminal_winnr)
-
-        -- Use leftabove for first window, then split from previous
+        -- Create split to the left
         vim.cmd('leftabove vsplit')
-        local new_winnr = vim.api.nvim_get_current_win()
-        vim.api.nvim_win_set_buf(new_winnr, win_info.bufnr)
-
-        if M.debug_enabled then
-          vim.notify('[Deft Diff] Restored source window: ' .. win_info.bufname, vim.log.levels.INFO)
-        end
+        vim.api.nvim_win_set_buf(0, win_info.bufnr)
       end
     end
   end
@@ -1774,35 +1711,43 @@ function M.close()
   -- Hide menu
   M.hide_command_menu()
 
-  -- Try to resurrect terminal first if needed
+  -- 1. Ensure Deft terminal is visible BEFORE closing diff windows
+  -- This prevents the "last window closed" issue which creates empty scratch buffers
   local ok, deft = pcall(require, 'deft')
-  if ok and deft.state.terminal_hidden and deft.show_terminal then
-    deft.show_terminal()
-    M.deft_terminal_winnr = deft.state.terminal_winnr
+  local term_bufnr = ok and deft.state.terminal_bufnr or nil
+
+  -- Check if terminal buffer is actually visible in any window
+  local term_win_id = nil
+  if term_bufnr and vim.api.nvim_buf_is_valid(term_bufnr) then
+    term_win_id = vim.fn.bufwinid(term_bufnr)
   end
 
-  -- Turn off diff mode and close windows
+  -- If not visible, force it open
+  if not term_win_id or term_win_id == -1 then
+    if ok and deft.show_terminal then
+      deft.show_terminal()
+      -- update our reference
+      term_win_id = deft.state.terminal_winnr
+    end
+  end
+
+  M.deft_terminal_winnr = term_win_id
+
+  -- 2. Now safe to close diff windows
   if M.diff_winnr_old and vim.api.nvim_win_is_valid(M.diff_winnr_old) then
-    vim.api.nvim_set_current_win(M.diff_winnr_old)
-    vim.cmd('diffoff')
     safe_close_win(M.diff_winnr_old)
   end
 
   if M.diff_winnr_new and vim.api.nvim_win_is_valid(M.diff_winnr_new) then
-    vim.api.nvim_set_current_win(M.diff_winnr_new)
-    vim.cmd('diffoff')
     safe_close_win(M.diff_winnr_new)
   end
 
-  -- Restore saved source windows
-  if #M.saved_source_windows > 0 then
-    M.restore_source_windows()
-  end
+  -- Restore saved source windows (this puts the layout back to [Code] | [Terminal])
+  M.restore_source_windows()
 
-  -- Restore terminal window to proper size (not full width)
+  -- Balance windows naturally instead of forcing a hardcoded width
   if M.deft_terminal_winnr and vim.api.nvim_win_is_valid(M.deft_terminal_winnr) then
-    -- Reset to default split size (80 columns as per init.lua config)
-    vim.api.nvim_win_set_width(M.deft_terminal_winnr, 80)
+    vim.cmd('wincmd =')
   end
 
   M.diff_winnr_old = nil
@@ -1822,7 +1767,7 @@ function M.close()
     is_multi_file = false,
   }
 
-  -- Return focus to Deft terminal
+  -- 3. Force focus to Deft terminal
   if M.deft_terminal_winnr and vim.api.nvim_win_is_valid(M.deft_terminal_winnr) then
     vim.api.nvim_set_current_win(M.deft_terminal_winnr)
     vim.cmd('startinsert')
