@@ -16,7 +16,7 @@ $ deft patch ./llm-generated.patch
 
 > 💡 **Pro tip:** LLM providers' web UIs often deliver the best results. Just ask for _"a single standard unified diff mode patch"_ and paste the response into a file. This alone is a 10x productivity boost.
 
-[Installation →](#full-installation)
+[Install it first →](#full-installation)
 
 ---
 
@@ -29,13 +29,34 @@ export OPENROUTER_API_KEY="your_key"   # Or ANTHROPIC_API_KEY, GEMINI_API_KEY, O
 $ deft
 ```
 
-The default configuration works out of the box for coding tasks. Customization is available but not required.
+The default configuration works out of the box for coding tasks. Customization is available (everything listed under [Advanced Features](#3-advanced-llm-agent-features) are configurable) but not required.
 
 → [Full Configuration Guide](./docs/configuration.md)
 
 ---
 
-## Why Deft™?
+## The Philosophy: Why Deft™?
+
+Most coding agents treat LLMs as "black magic"—promising that you can vaguely describe an app and have the AI build it blindly. We believe this is a fundamental misunderstanding of software engineering.
+
+**Deft™ is built on a different vision:**
+
+1.  **You are the Driver, LLM is the Engine:**
+    Deft treats the LLM as a powerful search engine—not just for code, but for exploring the problem space itself.
+
+    But a search engine is not a replacement for your own reasoning and judgement. You must define the feature, select the dependencies, and design the verification criteria. The LLM is a tool to assist you.
+
+2.  **Implementation as Auto-Completion:**
+    Once your design is settled, the LLM becomes the ultimate "auto-complete"—executing the implementation details instantly. You provide the architecture; LLM handles the keystrokes, Deft provides the harness and verification.
+
+3.  **Deterministic Control:**
+    The unified diff format forces the LLM to think like a human SWE—surgical, verifiable, focused changes rather than wholesale rewrites. This is the secret to making LLM coding *converge* on large codebases instead of spiraling into chaos.
+
+---
+
+## Key Innovations
+
+### 1. **The Mechanism: Patch-Based Integrity**
 
 Every LLM can generate code. But getting that code into your codebase? This is where most approaches fail:
 
@@ -45,13 +66,6 @@ Every LLM can generate code. But getting that code into your codebase? This is w
 
 **Deft™'s solution:** Content-based matching that ignores line numbers. Self-healing hunks. Interactive review. LLMs are trained on millions of Git diffs — Deft™ speaks their native language.
 
-> **10x LLM coding productivity with battle-tested patch mechanics**
-
----
-
-## Key Innovations
-
-### 1. **Patch Tool - Standard Diff Format**
 
 ```diff
 --- a/src/auth.ts
@@ -128,7 +142,7 @@ The tools from the newly added MCP server will not be visible to the LLM by defa
 
 ---
 
-#### 3.5. **Faithful Full Cognitive Continuity**
+#### 3.5. **Faithful Full Reasoning Continuity Across Providers**
 
 This agent strictly follows providers' ([Gemini](https://ai.google.dev/gemini-api/docs/thought-signatures), [OpenRouter](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens#preserving-reasoning-blocks), [Claude](https://platform.claude.com/docs/en/build-with-claude/extended-thinking#interleaved-thinking), [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses)) official API documentation for [fully interleaved thinking](./docs/sample_session_interaction.json) behaviors, to preserve the complete "Reasoning Chain" across turns.
 
@@ -152,7 +166,7 @@ $ node --version
 $ git clone https://github.com/rollingdellsw/deft-coder.git
 $ npm install -g ./deft-coder/release/deft-1.0.4.tgz
 
-# Build the Docker image for the sandbox MCP server (Linux only, not required for patch-only use case)
+# Build the Docker image (Optional, only required for ts-sandbox and browser skills)
 $ docker build -t ts-sandbox ./deft-coder/mcp-server/sandbox-ts
 ```
 
