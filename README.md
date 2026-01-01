@@ -216,16 +216,16 @@ OpenRouter (default, with GLM 4.7), Anthropic (Claude), OpenAI (GPT), Google (Ge
 
 ### MCP Tools (Via Servers)
 
-| Tool                    | Purpose                       |
-| ----------------------- | ----------------------------- |
-| **read_file**           | Read file contents            |
-| **write_file**          | Write content to files        |
-| **list_files**          | List directory contents       |
-| **search_files**        | Find files by pattern         |
-| **git_command**         | Git operations (push blocked) |
-| **search_code**         | LSP + ripgrep code search     |
-| **get_file_structure**  | Parse file structure          |
-| **get_lsp_diagnostics** | Get build errors/warnings     |
+| Tool                    | Purpose                                    |
+| ----------------------- | ------------------------------------------ |
+| **read_file**           | Read file contents                         |
+| **write_file**          | Write content to files                     |
+| **list_files**          | List directory contents                    |
+| **search_files**        | Find files by pattern                      |
+| **git_command**         | Git operations (push blocked)              |
+| **search_code**         | LSP + ripgrep code search (monorepo-aware) |
+| **get_file_structure**  | Parse file structure                       |
+| **get_lsp_diagnostics** | Get build errors/warnings                  |
 
 ### Skill-Injected Tools (On-Demand)
 

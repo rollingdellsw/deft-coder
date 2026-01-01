@@ -33,9 +33,7 @@ export const createDirectoryTool: ToolHandler = {
 
     const validation = validatePath(dirPath, context.workingDirectory);
     if (!validation.valid) {
-      printError(
-        `[create_directory] ✗ Validation failed: ${validation.error}`,
-      );
+      printError(`[create_directory] ✗ Validation failed: ${validation.error}`);
       return {
         content: [
           {

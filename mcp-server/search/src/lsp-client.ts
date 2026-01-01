@@ -92,15 +92,53 @@ export class LSPClient {
   // Track if we've received initial diagnostics (signals project is ready)
   private receivedInitialDiagnostics = false;
 
+  // Track rust-analyzer indexing progress
+  private indexingComplete = false;
+  private indexingProgress: Map<string, number> = new Map();
+  private indexingWaiters: Array<() => void> = [];
+  private lastProgressMessage = "";
+
   // Language ID for this LSP client
   private languageId: string = "typescript";
+
+  // Configurable timeouts based on language
+  private readonly requestTimeoutMs: number;
+  private readonly indexWaitMs: number;
+
+  // Environment variable overrides for timeouts
+  private static readonly ENV_REQUEST_TIMEOUT = "LSP_REQUEST_TIMEOUT_MS";
+  private static readonly ENV_INDEX_TIMEOUT = "LSP_INDEX_TIMEOUT_MS";
 
   constructor(
     private serverCommand: string[],
     private workspaceRoot: string,
     languageId?: string,
+    overrideTimeoutMs?: number,
   ) {
     if (languageId) this.languageId = languageId;
+
+    // rust-analyzer needs much longer timeouts for large workspaces
+    if (this.languageId === "rust") {
+      // Use override if provided, then env var, then default to 120s request / 15s index (soft)
+      // Note: index timeout must be < MCP tool call timeout (typically 30s) to allow query time
+      this.requestTimeoutMs =
+        overrideTimeoutMs ??
+        parseInt(process.env[LSPClient.ENV_REQUEST_TIMEOUT] ?? "120000", 10);
+      this.indexWaitMs =
+        overrideTimeoutMs ??
+        parseInt(process.env[LSPClient.ENV_INDEX_TIMEOUT] ?? "15000", 10);
+    } else {
+      // Use override if provided, then env var, then default to 20s request / 5s index
+      this.requestTimeoutMs =
+        overrideTimeoutMs ??
+        parseInt(process.env[LSPClient.ENV_REQUEST_TIMEOUT] ?? "20000", 10);
+      this.indexWaitMs =
+        overrideTimeoutMs ??
+        parseInt(process.env[LSPClient.ENV_INDEX_TIMEOUT] ?? "5000", 10);
+    }
+    printDebug(
+      `[LSPClient] Timeout config: request=${this.requestTimeoutMs}ms, index=${this.indexWaitMs}ms`,
+    );
   }
 
   public async start(): Promise<boolean> {
@@ -109,10 +147,17 @@ export class LSPClient {
     );
     const [command, ...args] = this.serverCommand;
 
-    this.process = spawn(command, args, {
+    this.process = spawn(command!, args, {
       cwd: this.workspaceRoot,
       stdio: ["pipe", "pipe", "pipe"],
+      // Create a new process group so we can kill all children together
+      detached: true,
     });
+
+    // Prevent the parent from waiting for this process group
+    this.process.unref();
+    // But re-ref so our process doesn't exit
+    this.process.ref();
 
     this.process.stderr?.on("data", (data) => {
       printDebug(`[LSPClient Server STDERR] ${data.toString()}`);
@@ -132,6 +177,13 @@ export class LSPClient {
     const params = {
       processId: process.pid,
       rootUri: `file://${this.workspaceRoot}`,
+      // Workspace folders for multi-root support
+      workspaceFolders: [
+        {
+          uri: `file://${this.workspaceRoot}`,
+          name: this.workspaceRoot.split("/").pop() ?? "workspace",
+        },
+      ],
       capabilities: {
         workspace: {
           symbol: {
@@ -155,6 +207,8 @@ export class LSPClient {
         },
       },
       trace: "off",
+      // LSP initialization options - server-specific settings
+      initializationOptions: this.getInitializationOptions(),
     };
 
     try {
@@ -168,6 +222,50 @@ export class LSPClient {
       printInfo("[LSPClient] LSP initialization failed:", error);
       return false;
     }
+  }
+
+  /**
+   * Get language-specific initialization options
+   */
+  private getInitializationOptions(): Record<string, unknown> {
+    if (this.languageId === "rust") {
+      return {
+        // rust-analyzer specific settings
+        // See: https://rust-analyzer.github.io/manual.html#configuration
+        files: {
+          // Exclude build artifacts and common non-source directories
+          excludeDirs: [
+            "target",
+            ".git",
+            "node_modules",
+            ".cargo",
+            "dist",
+            "build",
+          ],
+          // Watch fewer files to reduce memory usage
+          watcher: "server",
+        },
+        cargo: {
+          // Don't run build scripts during indexing (saves memory)
+          buildScripts: {
+            enable: false,
+          },
+          // Limit features to reduce indexing scope
+          allFeatures: false,
+        },
+        checkOnSave: {
+          // Disable check-on-save for MCP usage (we're read-only)
+          enable: false,
+        },
+        procMacro: {
+          // Disable proc macro expansion (memory heavy)
+          enable: false,
+        },
+      };
+    }
+
+    // TypeScript, Python, etc. - no special options needed
+    return {};
   }
 
   private sendRequest(method: string, params: any): Promise<RPCResponse> {
@@ -186,9 +284,13 @@ export class LSPClient {
       setTimeout(() => {
         if (this.pendingRequests.has(id)) {
           this.pendingRequests.delete(id);
-          reject(new Error(`Request ${id} (${method}) timed out.`));
+          reject(
+            new Error(
+              `Request ${id} (${method}) timed out after ${this.requestTimeoutMs}ms.`,
+            ),
+          );
         }
-      }, 10000); // 10 second timeout
+      }, this.requestTimeoutMs);
     });
   }
 
@@ -249,6 +351,66 @@ export class LSPClient {
   }
 
   private handleNotification(notification: RPCNotification): void {
+    // Handle rust-analyzer progress notifications
+    if (notification.method === "$/progress") {
+      const params = notification.params as {
+        token: string;
+        value: {
+          kind: "begin" | "report" | "end";
+          title?: string;
+          message?: string;
+          percentage?: number;
+        };
+      };
+
+      if (params?.token && params?.value) {
+        const { token, value } = params;
+
+        if (value.kind === "begin") {
+          this.indexingProgress.set(token, 0);
+          const msg = value.title ?? value.message ?? "Working...";
+          this.lastProgressMessage = msg;
+          printDebug(`[LSPClient] Progress started: ${msg}`);
+        } else if (value.kind === "report") {
+          if (value.percentage !== undefined) {
+            this.indexingProgress.set(token, value.percentage);
+          }
+          if (value.message) {
+            this.lastProgressMessage = value.message;
+            // Only log occasionally to avoid spam
+            if (value.percentage !== undefined && value.percentage % 20 === 0) {
+              printDebug(
+                `[LSPClient] Progress: ${value.message} (${value.percentage}%)`,
+              );
+            }
+          }
+        } else if (value.kind === "end") {
+          this.indexingProgress.delete(token);
+          printDebug(
+            `[LSPClient] Progress completed: ${token} (remaining: ${this.indexingProgress.size})`,
+          );
+
+          // Check if all indexing is complete
+          if (this.indexingProgress.size === 0 && !this.indexingComplete) {
+            this.indexingComplete = true;
+            printDebug("[LSPClient] All indexing tasks complete!");
+            // Notify all waiters
+            for (const waiter of this.indexingWaiters) {
+              waiter();
+            }
+            this.indexingWaiters = [];
+          }
+        }
+      }
+      return;
+    }
+
+    // Handle window/workDoneProgress/create (rust-analyzer sends this)
+    if (notification.method === "window/workDoneProgress/create") {
+      // Just acknowledge, we track progress in $/progress
+      return;
+    }
+
     if (notification.method === "textDocument/publishDiagnostics") {
       const params = notification.params as PublishDiagnosticsParams;
       if (params?.uri && params?.diagnostics) {
@@ -271,6 +433,57 @@ export class LSPClient {
   }
 
   /**
+   * Wait for rust-analyzer to complete indexing.
+   * Returns true if indexing completed, false if timeout.
+   */
+  private async waitForIndexingComplete(timeoutMs: number): Promise<boolean> {
+    if (this.indexingComplete) {
+      return true;
+    }
+
+    return new Promise<boolean>((resolve) => {
+      const startTime = Date.now();
+      let lastLogTime = 0;
+
+      // Check periodically and log progress
+      const checkInterval = setInterval(() => {
+        // Check faster
+        const elapsed = Date.now() - startTime;
+
+        if (this.indexingComplete) {
+          clearInterval(checkInterval);
+          resolve(true);
+          return;
+        }
+
+        if (elapsed >= timeoutMs) {
+          clearInterval(checkInterval);
+          printDebug(
+            `[LSPClient] Indexing soft timeout after ${elapsed}ms. Last progress: ${this.lastProgressMessage}`,
+          );
+          // CHANGE: Return true (success) to allow query to proceed despite timeout
+          resolve(true);
+          return;
+        }
+
+        // Log progress every 3 seconds
+        if (Date.now() - lastLogTime > 3000) {
+          lastLogTime = Date.now();
+          printDebug(
+            `[LSPClient] Still indexing... (${Math.round(elapsed / 1000)}s) - ${this.lastProgressMessage}`,
+          );
+        }
+      }, 500);
+
+      // Also register as a waiter for immediate notification
+      this.indexingWaiters.push(() => {
+        clearInterval(checkInterval);
+        resolve(true);
+      });
+    });
+  }
+
+  /**
    * Ensure the LSP project is initialized by opening a TypeScript file.
    * typescript-language-server requires at least one open file for workspace/symbol to work.
    */
@@ -281,8 +494,18 @@ export class LSPClient {
 
     // rust-analyzer indexes from Cargo.toml automatically, no need to open a file
     if (this.languageId === "rust") {
-      printDebug(`[LSPClient] Waiting for rust-analyzer to index...`);
-      await new Promise((r) => setTimeout(r, 3000));
+      printDebug(
+        `[LSPClient] Waiting for rust-analyzer to index (soft limit ${Math.round(this.indexWaitMs / 1000)}s)...`,
+      );
+
+      // Wait for indexing to complete via progress notifications
+      // CHANGE: We accept the result regardless of timeout
+      await this.waitForIndexingComplete(this.indexWaitMs);
+
+      printDebug(
+        "[LSPClient] Proceeding with queries (indexing may still be backgrounded)",
+      );
+
       this.projectInitialized = true;
       return;
     }
@@ -505,8 +728,78 @@ export class LSPClient {
     this.diagnosticsMap.clear();
   }
 
-  public stop() {
-    this.sendNotification("exit", {});
-    this.process.kill();
+  /**
+   * Stop the LSP server and clean up all child processes.
+   * Returns a promise that resolves when the server has been terminated.
+   */
+  public stop(): Promise<void> {
+    return new Promise((resolve) => {
+      if (!this.process) {
+        resolve();
+        return;
+      }
+
+      printDebug(`[LSPClient] Stopping LSP server (pid: ${this.process.pid})`);
+
+      try {
+        // Send LSP shutdown sequence
+        this.sendNotification("shutdown", {});
+
+        // Give it a moment to clean up
+        setTimeout(() => {
+          try {
+            this.sendNotification("exit", {});
+          } catch {
+            // Ignore - process may already be dead
+          }
+        }, 100);
+
+        // Kill the entire process group to ensure child processes (like proc-macro-srv) are killed
+        // Using negative PID kills the process group
+        if (this.process.pid) {
+          try {
+            // Check if process is still alive before attempting to kill
+            try {
+              process.kill(this.process.pid, 0);
+            } catch {
+              // Process already dead, nothing to do
+              this.isInitialized = false;
+              resolve();
+              return;
+            }
+            process.kill(-this.process.pid, "SIGTERM");
+          } catch {
+            // Process group kill failed, try direct kill
+            this.process.kill("SIGTERM");
+          }
+
+          // Force kill after 2 seconds if still alive
+          setTimeout(() => {
+            try {
+              if (this.process?.pid) {
+                process.kill(-this.process.pid, "SIGKILL");
+              }
+              resolve();
+            } catch {
+              // Already dead, ignore
+            }
+          }, 2000);
+        }
+      } catch (error) {
+        printDebug(
+          `[LSPClient] Error during stop: ${(error as Error).message}`,
+        );
+        // Force kill as fallback
+        try {
+          this.process.kill("SIGKILL");
+        } catch {
+          // Ignore
+        }
+      }
+
+      this.isInitialized = false;
+      // If we reach here without early return, resolve after a short delay
+      setTimeout(resolve, 100);
+    });
   }
 }

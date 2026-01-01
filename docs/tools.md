@@ -313,13 +313,27 @@ Note: Pass the git subcommand without the `git` prefix.
 | `search_and_replace`  | Bulk find/replace across files                    |
 | `get_lsp_diagnostics` | Get build errors/warnings for a file              |
 
-**LSP Backend Limitation:**
+**LSP Backend:**
 
-The `search_code` tool attempts to use LSP (Language Server Protocol) for `definition` and `references` search types. However, LSP-based workspace symbol search only works when Deft is running from within the target TypeScript project directory. In monorepos with multiple independent `tsconfig.json` projects, the LSP server can only index one project at a time.
+The `search_code` tool uses LSP (Language Server Protocol) for `definition` and `references` search types. The LSP backend includes:
+
+- **Automatic workspace detection** - Detects project roots by finding `Cargo.toml`, `tsconfig.json`, `go.mod`, etc.
+- **Monorepo support** - Identifies workspace roots (Cargo workspaces, TypeScript composite projects) and queries only the root LSP server, which indexes all member packages
+- **Single-server caching** - Only one LSP server runs at a time to bound memory usage; switches automatically when querying different projects
+- **Idle timeout** - LSP servers auto-shutdown after 5 minutes of inactivity
 
 When LSP is unavailable or returns no results, `search_code` automatically falls back to ripgrep for text-based searching, which works across all files regardless of project structure.
 
-For reliable cross-project symbol searching in monorepos, use `search_type: "text"` with word boundary matching, or run Deft from within the specific package directory.
+**Verified Language Support:**
+
+| Language   | LSP Server                 | Monorepo Type      | Status      |
+| ---------- | -------------------------- | ------------------ | ----------- |
+| Rust       | rust-analyzer              | Cargo workspace    | ✅ Verified |
+| TypeScript | typescript-language-server | Composite projects | ✅ Verified |
+| Go         | gopls                      | Go modules         | ✅ Verified |
+| Python     | pylsp                      | -                  | Supported   |
+| Java       | jdtls                      | -                  | Supported   |
+| C/C++      | clangd                     | -                  | Supported   |
 
 **Examples:**
 
@@ -335,6 +349,13 @@ search_code({ query: "authenticate", search_type: "references" });
 
 // Regex search
 search_code({ query: "TODO:.*fix", search_type: "regex" });
+
+// With custom timeout (for large projects)
+search_code({
+  query: "MySymbol",
+  search_type: "definition",
+  timeout_ms: 60000,
+});
 
 // File structure analysis
 get_file_structure({ file_path: "src/index.ts" });

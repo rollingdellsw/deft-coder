@@ -1,5 +1,7 @@
 # Release v1.0.4
 
+- Enable multiple LSP server support for monorepo workspaces.
+- Fix path matching for stale context detection in guardrail.
 - Enable ripgrep as backup strategy for search_code.
 - Refine Neovim diff UI aesthetics.
 - Refactor UI architecture to use stdout-based rendering (fixes flickering/performance).

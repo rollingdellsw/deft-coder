@@ -5,35 +5,13 @@ import { validatePath } from "../server.js";
 import * as fs from "fs/promises";
 import { spawn } from "child_process";
 import { ToolHandler, MCPToolResult, ServerContext } from "../server.js";
-import { LSPManager } from "../lsp-manager.js";
+import { ProjectDetector, ProjectRoot } from "../project-detector.js";
+import { getLSPCache } from "../lsp-cache.js";
 import { printDebug } from "../utils/log.js";
 
 const execAsync = promisify(exec);
 
-/** Maximum output size for search results (~4KB) */
-const SEARCH_MAX_OUTPUT_SIZE = 4096;
-
-/**
- * Truncate search output with pagination hint
- */
-function truncateSearchOutput(
-  output: string,
-  maxSize: number = SEARCH_MAX_OUTPUT_SIZE,
-): string {
-  if (output.length <= maxSize) {
-    return output;
-  }
-
-  const truncatedBytes = output.length - maxSize;
-  const hint = "Use start/max_results params for pagination, or narrow query";
-  const truncateMsg = `\n\n[OUTPUT TRUNCATED: ${truncatedBytes} chars omitted. ${hint}]`;
-  const reserveForMsg = truncateMsg.length + 50;
-  const availableSize = maxSize - reserveForMsg;
-
-  return output.slice(0, availableSize) + truncateMsg;
-}
-
-let lspManager: LSPManager | undefined;
+let projectDetector: ProjectDetector | undefined;
 
 export interface SearchCodeParams {
   query: string;
@@ -44,6 +22,7 @@ export interface SearchCodeParams {
   max_results?: number;
   start?: number;
   context_lines?: number;
+  timeout_ms?: number;
 }
 
 export interface SearchResult {
@@ -58,6 +37,9 @@ export interface SearchResponse {
   results: SearchResult[];
   total_count: number;
   search_backend: "ripgrep" | "grep" | "lsp";
+  limit_reason?: "max_results" | "output_size_limit";
+  next_start?: number;
+  remaining_count?: number;
 }
 
 /**
@@ -109,13 +91,33 @@ function buildRipgrepCommand(
   // File type filters
   if (fileTypes.length > 0) {
     fileTypes.forEach((ext) => {
-      args.push("--type-add", `custom:*.${ext}`, "--type", "custom");
+      args.push("--type-add", `custom:*.${ext}`);
+      args.push("--type", "custom");
     });
   }
 
-  // Exclude patterns
-  excludePaths.forEach((pattern) => {
-    args.push("--glob", `!${pattern}`);
+  // Helper to convert exclude path to proper glob pattern for ripgrep
+  const toGlobPattern = (pattern: string): string[] => {
+    const patterns: string[] = [];
+    // If pattern ends with /, it's explicitly a directory
+    if (pattern.endsWith("/")) {
+      patterns.push(`!${pattern}**`);
+      patterns.push(`!**/${pattern}**`);
+    } else if (pattern.includes("/")) {
+      // Pattern contains /, it's a path (could be file or directory)
+      patterns.push(`!${pattern}`);
+      patterns.push(`!${pattern}/**`);
+    } else {
+      // Simple name - exclude as both file and directory at any depth
+      patterns.push(`!**/${pattern}`);
+      patterns.push(`!**/${pattern}/**`);
+    }
+    return patterns;
+  };
+
+  // Apply exclude patterns
+  excludePaths.flatMap(toGlobPattern).forEach((pattern) => {
+    args.push("--glob", pattern);
   });
 
   // Default excludes for common directories
@@ -290,6 +292,43 @@ function parseGrepOutput(output: string): SearchResult[] {
 }
 
 /**
+ * Check if a file path should be excluded based on exclude patterns
+ * Matches both directory paths and file names
+ */
+function shouldExcludePath(filePath: string, excludePaths: string[]): boolean {
+  if (excludePaths.length === 0) {
+    return false;
+  }
+
+  const normalizedPath = filePath.replace(/\\/g, "/"); // Normalize Windows paths
+
+  return excludePaths.some((pattern) => {
+    const normalizedPattern = pattern.replace(/\\/g, "/");
+
+    // If pattern ends with /, match only directories
+    if (normalizedPattern.endsWith("/")) {
+      return (
+        normalizedPath.startsWith(normalizedPattern) ||
+        normalizedPath.includes(`/${normalizedPattern}`)
+      );
+    }
+
+    // If pattern contains /, it's a path - check if filePath starts with it
+    if (normalizedPattern.includes("/")) {
+      return (
+        normalizedPath.startsWith(normalizedPattern) ||
+        normalizedPath.startsWith(`/${normalizedPattern}`) ||
+        normalizedPath.includes(`/${normalizedPattern}/`)
+      );
+    }
+
+    // Simple name - check if any path component matches
+    const pathComponents = normalizedPath.split("/");
+    return pathComponents.some((component) => component === normalizedPattern);
+  });
+}
+
+/**
  * Execute command with proper argument handling
  */
 function executeCommand(
@@ -330,6 +369,7 @@ async function searchCode(
 ): Promise<SearchResponse> {
   let query = params.query;
   const searchType = params.search_type;
+  const timeoutMs = params.timeout_ms;
 
   // IMPROVEMENT: Handle common agent hallucination where they prefix queries with colon (e.g. :MySymbol)
   // Only apply to symbol searches where a colon is syntactically invalid/unlikely at start
@@ -348,92 +388,32 @@ async function searchCode(
   const start = params.start ?? 0;
   const contextLines = Math.min(params.context_lines ?? 3, 5);
 
-  // Track if we should skip ripgrep (LSP returned valid results)
-  let lspSucceeded = false;
-
   // LSP-based search for definitions and references
   if (searchType === "definition" || searchType === "references") {
     try {
-      if (!lspManager) {
-        // IMPROVEMENT: Ensure absolute path for LSP rootUri (fixes file://. issues)
-        const absoluteWorkingDir = path.resolve(workingDir);
-        printDebug(
-          `[DEBUG search-code] Creating LSPManager with workingDir=${absoluteWorkingDir}`,
-        );
-        lspManager = new LSPManager(absoluteWorkingDir);
-        await lspManager.initialize();
+      const lspResults = await searchWithLSP(
+        query,
+        workingDir,
+        searchPath,
+        fileTypes,
+        excludePaths,
+        timeoutMs,
+      );
+
+      if (lspResults !== null && lspResults.length > 0) {
+        // Apply pagination
+        const paginatedResults = lspResults.slice(start, start + maxResults);
+        return {
+          results: paginatedResults,
+          total_count: lspResults.length,
+          search_backend: "lsp",
+        };
       }
-      const language = await lspManager.inferLanguage();
-      printDebug(`[DEBUG search-code] inferLanguage returned: ${language}`);
-      if (language) {
-        const client = await lspManager.getClientForLanguage(language);
-        printDebug(
-          `[DEBUG search-code] getClientForLanguage(${language}) returned: ${client ? "client" : "undefined"}`,
-        );
-        if (client) {
-          printDebug(`[Search] Using backend: lsp`);
-          const symbols = await client.getWorkspaceSymbols(query);
-          printDebug(`[Search] LSP returned ${symbols.length} symbols`);
 
-          // Only use LSP results if we got some symbols
-          if (symbols.length > 0) {
-            // Resolve full search path for filtering
-            const pathValidation = validatePath(searchPath, workingDir);
-            const fullSearchPath = pathValidation.valid
-              ? pathValidation.fullPath!
-              : path.resolve(workingDir, searchPath);
-
-            let results = symbols.map((symbol) => ({
-              file_path: symbol.location.uri.replace("file://", ""),
-              line_number: symbol.location.range.start.line + 1,
-              column: symbol.location.range.start.character + 1,
-              match_text: symbol.name,
-              context: `Symbol: ${symbol.name} (kind: ${symbol.kind})`,
-            }));
-
-            // Apply path filter (LSP returns workspace-wide results)
-            if (searchPath !== ".") {
-              results = results.filter((r) =>
-                r.file_path.startsWith(fullSearchPath),
-              );
-            }
-
-            // Apply file_types filter
-            if (fileTypes.length > 0) {
-              results = results.filter((r) => {
-                const ext = path.extname(r.file_path).slice(1); // Remove leading dot
-                return fileTypes.includes(ext);
-              });
-            }
-
-            // Apply exclude_paths filter
-            if (excludePaths.length > 0) {
-              results = results.filter((r) => {
-                return !excludePaths.some((pattern) =>
-                  r.file_path.includes(pattern),
-                );
-              });
-            }
-
-            lspSucceeded = true;
-            return {
-              results: results.slice(start, start + maxResults),
-              total_count: results.length,
-              search_backend: "lsp",
-            };
-          } else {
-            printDebug(
-              "[Search] LSP returned no symbols, falling back to ripgrep.",
-            );
-          }
-        }
-      }
-      if (!lspSucceeded) {
-        printDebug("[Search] LSP not available, falling back to ripgrep.");
-      }
+      printDebug("[Search] LSP returned no results, falling back to ripgrep.");
     } catch (error) {
       printDebug(
-        `[DEBUG search-code] LSP search failed: ${(error as Error).message}\n${(error as Error).stack}`,
+        `[Search] LSP search failed: ${(error as Error).message}, falling back to ripgrep`,
       );
     }
   }
@@ -511,6 +491,20 @@ async function searchCode(
     throw error;
   }
 
+  // Apply exclude_paths filter (extra safety after ripgrep/grep)
+  if (excludePaths.length > 0) {
+    const beforeFilter = results.length;
+    results = results.filter(
+      (result) => !shouldExcludePath(result.file_path, excludePaths),
+    );
+    const afterFilter = results.length;
+    if (beforeFilter !== afterFilter) {
+      printDebug(
+        `[Search] Excluded ${beforeFilter - afterFilter} results matching exclude_paths`,
+      );
+    }
+  }
+
   printDebug(`[Search] Found ${results.length} total results`);
 
   // Apply pagination
@@ -571,7 +565,12 @@ export const searchCodeToolHandler: ToolHandler = {
       context_lines: {
         type: "integer",
         description:
-          "Number of context lines before/after match (default: 3, max: 5)",
+          "Number of context lines before/after match (default: 5, max: 10)",
+      },
+      timeout_ms: {
+        type: "integer",
+        description:
+          "LSP request timeout in milliseconds (default: 30000 for most languages, 120000 for Rust)",
       },
     },
     required: ["query", "search_type"],
@@ -614,17 +613,46 @@ export const searchCodeToolHandler: ToolHandler = {
           typeof params["context_lines"] === "number"
             ? params["context_lines"]
             : undefined,
+        timeout_ms:
+          typeof params["timeout_ms"] === "number"
+            ? params["timeout_ms"]
+            : undefined,
       };
 
       const result = await searchCode(searchParams, context.workingDirectory);
 
-      const output = truncateSearchOutput(JSON.stringify(result, null, 2));
+      // Smart Truncation: ensure JSON output fits within 4KB while maintaining valid JSON
+      const MAX_OUTPUT_SIZE = 4096;
+      // Reserve space for pagination metadata
+      const SAFE_SIZE_LIMIT = MAX_OUTPUT_SIZE - 150;
+
+      let json = JSON.stringify(result, null, 2);
+
+      if (json.length > SAFE_SIZE_LIMIT) {
+        result.limit_reason = "output_size_limit";
+        // Iteratively remove results until it fits
+        while (json.length > SAFE_SIZE_LIMIT && result.results.length > 0) {
+          result.results.pop();
+          json = JSON.stringify(result, null, 2);
+        }
+      }
+
+      // Add pagination hints
+      const start = searchParams.start ?? 0;
+      const nextStart = start + result.results.length;
+      const remaining = result.total_count - nextStart;
+
+      if (remaining > 0) {
+        result.next_start = nextStart;
+        result.remaining_count = remaining;
+        json = JSON.stringify(result, null, 2);
+      }
 
       return {
         content: [
           {
             type: "text",
-            text: output,
+            text: json,
           },
         ],
       };
@@ -641,3 +669,163 @@ export const searchCodeToolHandler: ToolHandler = {
     }
   },
 };
+
+/**
+ * Search using LSP with single-server cache.
+ * Iterates through detected projects until results are found.
+ */
+async function searchWithLSP(
+  query: string,
+  workingDir: string,
+  searchPath: string,
+  fileTypes: string[],
+  excludePaths: string[],
+  timeoutMs?: number,
+): Promise<SearchResult[] | null> {
+  const absoluteWorkingDir = path.resolve(workingDir);
+
+  // Initialize project detector
+  if (!projectDetector) {
+    projectDetector = new ProjectDetector(absoluteWorkingDir);
+  }
+
+  // Detect all projects in workspace
+  let projects = await projectDetector.detectProjects();
+  if (projects.length === 0) {
+    printDebug("[Search] No projects detected in workspace");
+    return null;
+  }
+
+  // For Rust workspaces: only query the workspace root, not individual crates
+  // rust-analyzer at workspace root already indexes all member crates
+  const workspaceRoots = projects.filter((p) => p.isWorkspaceRoot);
+  const rustWorkspaceRoot = workspaceRoots.find((p) => p.language === "rust");
+
+  if (rustWorkspaceRoot) {
+    printDebug(
+      `[Search] Using Cargo workspace root: ${rustWorkspaceRoot.path} (skipping ${projects.filter((p) => p.language === "rust").length - 1} member crates)`,
+    );
+    // Filter to only use the workspace root for Rust
+    const nonRustProjects = projects.filter((p) => p.language !== "rust");
+    projects = [rustWorkspaceRoot, ...nonRustProjects];
+  }
+
+  printDebug(
+    `[Search] Found ${projects.length} projects, searching for "${query}"`,
+  );
+
+  // Prioritize projects: current cached project first, then by path depth
+  const cache = getLSPCache();
+  const sortedProjects = prioritizeProjects(
+    projects,
+    cache.getCurrentProject(),
+  );
+
+  const allResults: SearchResult[] = [];
+
+  for (const project of sortedProjects) {
+    printDebug(
+      `[Search] Querying project: ${project.path}${project.isWorkspaceRoot ? " (workspace root)" : ""}`,
+    );
+
+    const client = await cache.getClient(project, timeoutMs);
+    if (!client) {
+      printDebug(`[Search] Could not get LSP client for ${project.path}`);
+      continue;
+    }
+
+    try {
+      const symbols = await client.getWorkspaceSymbols(query);
+      printDebug(
+        `[Search] Project ${project.path} returned ${symbols.length} symbols`,
+      );
+
+      if (symbols.length > 0) {
+        const results = symbols.map((symbol) => ({
+          file_path: symbol.location.uri.replace("file://", ""),
+          line_number: symbol.location.range.start.line + 1,
+          column: symbol.location.range.start.character + 1,
+          match_text: symbol.name,
+          context: `Symbol: ${symbol.name} (kind: ${symbol.kind})`,
+        }));
+
+        allResults.push(...results);
+      }
+
+      // Optimization: For workspace roots, we can stop after getting results
+      // since the workspace root LSP already indexes all member crates
+      if (project.isWorkspaceRoot && allResults.length > 0) {
+        printDebug(
+          `[Search] Found ${allResults.length} results from workspace root, stopping search`,
+        );
+        break;
+      }
+    } catch (error) {
+      printDebug(
+        `[Search] LSP query failed for ${project.path}: ${(error as Error).message}`,
+      );
+    }
+  }
+
+  if (allResults.length === 0) {
+    return null;
+  }
+
+  // Apply filters
+  let filtered = allResults;
+
+  // Path filter
+  if (searchPath !== ".") {
+    const fullSearchPath = path.resolve(workingDir, searchPath);
+    filtered = filtered.filter((r) => r.file_path.startsWith(fullSearchPath));
+  }
+
+  // File type filter
+  if (fileTypes.length > 0) {
+    filtered = filtered.filter((r) => {
+      const ext = path.extname(r.file_path).slice(1);
+      return fileTypes.includes(ext);
+    });
+  }
+
+  // Exclude paths filter
+  if (excludePaths.length > 0) {
+    filtered = filtered.filter(
+      (r) => !shouldExcludePath(r.file_path, excludePaths),
+    );
+  }
+
+  // Deduplicate by file:line
+  const seen = new Set<string>();
+  filtered = filtered.filter((r) => {
+    const key = `${r.file_path}:${r.line_number}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+
+  return filtered;
+}
+
+/**
+ * Sort projects for optimal search order:
+ * 1. Currently cached project (no LSP restart needed)
+ * 2. Shallower paths first (root projects more likely to have shared code)
+ */
+function prioritizeProjects(
+  projects: ProjectRoot[],
+  currentProject: ProjectRoot | null,
+): ProjectRoot[] {
+  return [...projects].sort((a, b) => {
+    // Current project always first
+    if (currentProject) {
+      if (a.path === currentProject.path) return -1;
+      if (b.path === currentProject.path) return 1;
+    }
+
+    // Then by path depth (shallower first)
+    const depthA = a.path.split(path.sep).length;
+    const depthB = b.path.split(path.sep).length;
+    return depthA - depthB;
+  });
+}
