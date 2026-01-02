@@ -50,7 +50,7 @@ Most coding agents treat LLMs as "black magic"—promising that you can vaguely 
     Once your design is settled, the LLM becomes the ultimate "auto-complete"—executing the implementation details instantly. You provide the architecture; LLM handles the keystrokes, Deft provides the harness and verification.
 
 3.  **Deterministic Control:**
-    The unified diff format forces the LLM to think like a human SWE—surgical, verifiable, focused changes rather than wholesale rewrites. This is the secret to making LLM coding *converge* on large codebases instead of spiraling into chaos.
+    The unified diff format forces the LLM to think like a human SWE—surgical, verifiable, focused changes rather than wholesale rewrites. This is the secret to making LLM coding _converge_ on large codebases instead of spiraling into chaos.
 
 ---
 
@@ -65,7 +65,6 @@ Every LLM can generate code. But getting that code into your codebase? This is w
 - **Standard patch tools reject LLM output** — LLMs can't count line numbers accurately.
 
 **Deft™'s solution:** Content-based matching that ignores line numbers. Self-healing hunks. Interactive review. LLMs are trained on millions of Git diffs — Deft™ speaks their native language.
-
 
 ```diff
 --- a/src/auth.ts
@@ -98,9 +97,7 @@ Every LLM can generate code. But getting that code into your codebase? This is w
 
 Besides being a standalone CLI, Deft™ can also work within Neovim as a plugin. In both modes, it provides per-hunk interactive change review capability.
 
-
 https://github.com/user-attachments/assets/1e392974-7f16-435f-a044-7b150278df3d
-
 
 When working with Neovim, select any code, press `<leader>ca`, ask questions or request changes, then review in the native diff view.
 

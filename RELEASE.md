@@ -1,5 +1,6 @@
 # Release v1.0.4
 
+- Enable positional queries - definition, references, hover for LSP search_code
 - Enable multiple LSP server support for monorepo workspaces.
 - Fix path matching for stale context detection in guardrail.
 - Enable ripgrep as backup strategy for search_code.

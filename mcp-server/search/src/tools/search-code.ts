@@ -15,7 +15,7 @@ let projectDetector: ProjectDetector | undefined;
 
 export interface SearchCodeParams {
   query: string;
-  search_type: "definition" | "references" | "text" | "regex";
+  search_type: "definition" | "references" | "hover" | "text" | "regex";
   path?: string;
   file_types?: string[];
   exclude_paths?: string[];
@@ -23,6 +23,10 @@ export interface SearchCodeParams {
   start?: number;
   context_lines?: number;
   timeout_ms?: number;
+  // Positional parameters for references/definition/hover at a specific location
+  file_path?: string;
+  line?: number;
+  column?: number;
 }
 
 export interface SearchResult {
@@ -40,6 +44,15 @@ export interface SearchResponse {
   limit_reason?: "max_results" | "output_size_limit";
   next_start?: number;
   remaining_count?: number;
+  // For hover results
+  hover_content?: string;
+}
+
+interface HoverResponse {
+  hover_content: string;
+  file_path: string;
+  line: number;
+  column: number;
 }
 
 /**
@@ -292,6 +305,167 @@ function parseGrepOutput(output: string): SearchResult[] {
 }
 
 /**
+ * Get references at a specific position using textDocument/references
+ */
+async function getReferencesAtPosition(
+  filePath: string,
+  line: number,
+  column: number,
+  workingDir: string,
+  timeoutMs?: number,
+): Promise<SearchResult[] | null> {
+  printDebug(`[Search] getReferencesAtPosition: ${filePath}:${line}:${column}`);
+  const absoluteWorkingDir = path.resolve(workingDir);
+  const absoluteFilePath = path.resolve(absoluteWorkingDir, filePath);
+
+  // Find project for this file
+  if (!projectDetector) {
+    projectDetector = new ProjectDetector(absoluteWorkingDir);
+  }
+  const project = await projectDetector.findProjectForFile(absoluteFilePath);
+  if (!project) {
+    printDebug(
+      `[Search] getReferencesAtPosition: No project found for file: ${absoluteFilePath}`,
+    );
+    return null;
+  }
+
+  printDebug(
+    `[Search] getReferencesAtPosition: Found project ${project.path} (${project.language})`,
+  );
+
+  const cache = getLSPCache();
+  const client = await cache.getClient(project, timeoutMs);
+  if (!client) {
+    printDebug(
+      `[Search] getReferencesAtPosition: Could not get LSP client for ${project.path}`,
+    );
+    return null;
+  }
+
+  try {
+    // Read file content and open document
+    const fsModule = await import("fs/promises");
+    const content = await fsModule.readFile(absoluteFilePath, "utf-8");
+    const uri = `file://${absoluteFilePath}`;
+
+    printDebug(`[Search] getReferencesAtPosition: Opening document ${uri}`);
+    await client.openDocument(uri, project.language, content);
+
+    // Ensure project is fully initialized (wait for indexing)
+    await client.ensureProjectInitialized();
+
+    // LSP uses 0-based positions
+    const position = { line: line - 1, character: column - 1 };
+    printDebug(
+      `[Search] getReferencesAtPosition: Calling textDocument/references at position ${JSON.stringify(position)}`,
+    );
+    const references = await client.getReferences(uri, position, true);
+
+    printDebug(
+      `[Search] Found ${references.length} references at ${filePath}:${line}:${column}`,
+    );
+
+    return references.map((ref) => ({
+      file_path: ref.uri.replace("file://", ""),
+      line_number: ref.range.start.line + 1,
+      column: ref.range.start.character + 1,
+      match_text: "", // Will be filled by caller if needed
+      context: `Reference at line ${ref.range.start.line + 1}`,
+    }));
+  } catch (error) {
+    printDebug(`[Search] LSP references failed: ${(error as Error).message}`);
+    return null;
+  }
+}
+
+/**
+ * Get hover information at a specific position
+ */
+async function getHoverAtPosition(
+  filePath: string,
+  line: number,
+  column: number,
+  workingDir: string,
+  timeoutMs?: number,
+): Promise<HoverResponse | null> {
+  printDebug(`[Search] getHoverAtPosition: ${filePath}:${line}:${column}`);
+  const absoluteWorkingDir = path.resolve(workingDir);
+  const absoluteFilePath = path.resolve(absoluteWorkingDir, filePath);
+
+  if (!projectDetector) {
+    projectDetector = new ProjectDetector(absoluteWorkingDir);
+  }
+  const project = await projectDetector.findProjectForFile(absoluteFilePath);
+  if (!project) {
+    printDebug(
+      `[Search] getHoverAtPosition: No project found for file: ${absoluteFilePath}`,
+    );
+    return null;
+  }
+
+  printDebug(
+    `[Search] getHoverAtPosition: Found project ${project.path} (${project.language})`,
+  );
+
+  const cache = getLSPCache();
+  const client = await cache.getClient(project, timeoutMs);
+  if (!client) {
+    printDebug(
+      `[Search] getHoverAtPosition: Could not get LSP client for ${project.path}`,
+    );
+    return null;
+  }
+
+  try {
+    const fsModule = await import("fs/promises");
+    const content = await fsModule.readFile(absoluteFilePath, "utf-8");
+    const uri = `file://${absoluteFilePath}`;
+
+    printDebug(`[Search] getHoverAtPosition: Opening document ${uri}`);
+    await client.openDocument(uri, project.language, content);
+
+    // Ensure project is fully initialized (wait for indexing)
+    await client.ensureProjectInitialized();
+
+    const position = { line: line - 1, character: column - 1 };
+    printDebug(
+      `[Search] getHoverAtPosition: Calling textDocument/hover at position ${JSON.stringify(position)}`,
+    );
+    const hover = await client.getHover(uri, position);
+
+    if (!hover) {
+      printDebug(`[Search] getHoverAtPosition: No hover result returned`);
+      return null;
+    }
+
+    printDebug(`[Search] getHoverAtPosition: Got hover result`);
+
+    // Normalize hover contents to string
+    let hoverText: string;
+    if (typeof hover.contents === "string") {
+      hoverText = hover.contents;
+    } else if (Array.isArray(hover.contents)) {
+      hoverText = hover.contents
+        .map((c) => (typeof c === "string" ? c : c.value))
+        .join("\n\n");
+    } else {
+      hoverText = hover.contents.value;
+    }
+
+    return {
+      hover_content: hoverText,
+      file_path: filePath,
+      line,
+      column,
+    };
+  } catch (error) {
+    printDebug(`[Search] LSP hover failed: ${(error as Error).message}`);
+    return null;
+  }
+}
+
+/**
  * Check if a file path should be excluded based on exclude patterns
  * Matches both directory paths and file names
  */
@@ -366,7 +540,7 @@ function executeCommand(
 async function searchCode(
   params: SearchCodeParams,
   workingDir: string,
-): Promise<SearchResponse> {
+): Promise<SearchResponse | HoverResponse> {
   let query = params.query;
   const searchType = params.search_type;
   const timeoutMs = params.timeout_ms;
@@ -387,6 +561,69 @@ async function searchCode(
   const maxResults = Math.min(params.max_results ?? 50, 50);
   const start = params.start ?? 0;
   const contextLines = Math.min(params.context_lines ?? 3, 5);
+
+  // Positional parameters for precise LSP queries
+  const filePath = params.file_path;
+  const line = params.line;
+  const column = params.column;
+  const hasPosition =
+    filePath !== undefined && line !== undefined && column !== undefined;
+
+  // Handle hover requests (always requires position)
+  if (searchType === "hover") {
+    if (!hasPosition) {
+      throw new Error(
+        "hover search_type requires file_path, line, and column parameters",
+      );
+    }
+    const hoverResult = await getHoverAtPosition(
+      filePath,
+      line,
+      column,
+      workingDir,
+      timeoutMs,
+    );
+    if (hoverResult === null) {
+      // Don't fall through to workspace/symbol - hover is position-specific
+      throw new Error(
+        `No hover information available at ${filePath}:${line}:${column}. The LSP server may still be indexing, or the position may not have hover info.`,
+      );
+    }
+    return hoverResult;
+  }
+
+  // Handle positional references (textDocument/references)
+  if (searchType === "references" && hasPosition) {
+    printDebug(
+      `[Search] Using positional references for ${filePath}:${line}:${column}`,
+    );
+    const refResults = await getReferencesAtPosition(
+      filePath,
+      line,
+      column,
+      workingDir,
+      timeoutMs,
+    );
+    if (refResults !== null && refResults.length > 0) {
+      const paginatedResults = refResults.slice(start, start + maxResults);
+      return {
+        results: paginatedResults,
+        total_count: refResults.length,
+        search_backend: "lsp",
+      };
+    }
+    // For positional references, don't fall through - return empty or error
+    printDebug("[Search] LSP references returned no results at position.");
+    return {
+      results: [],
+      total_count: 0,
+      search_backend: "lsp",
+    };
+  }
+
+  // Handle positional definition (textDocument/definition)
+  // Note: For definition, we typically want workspace/symbol for fuzzy search,
+  // but if position is provided, we can use textDocument/definition for precision
 
   // LSP-based search for definitions and references
   if (searchType === "definition" || searchType === "references") {
@@ -524,24 +761,65 @@ async function searchCode(
 
 export const searchCodeToolHandler: ToolHandler = {
   name: "search_code",
-  description:
-    "Search for code patterns. Types: definition/references (LSP workspace symbols, same behavior), text (literal), regex. Falls back to ripgrep if LSP unavailable.",
+  description: `Search for code symbols, references, documentation, and text patterns using LSP and ripgrep.
+
+SEARCH TYPES:
+- definition: Find where a symbol is defined (uses LSP workspace/symbol)
+- references: Find all usages of a symbol at a specific position (uses LSP textDocument/references)
+- hover: Get documentation/type info at a specific position (uses LSP textDocument/hover)
+- text: Literal text search (uses ripgrep)
+- regex: Pattern search (uses ripgrep)
+
+TWO-PHASE WORKFLOW for finding all usages:
+1. First, find the definition: search_code({ query: "MyClass", search_type: "definition" })
+   → Returns file_path, line_number, column pointing to the symbol name
+2. Then, find references: search_code({ search_type: "references", file_path: "...", line: N, column: M })
+   → Returns all locations where the symbol is used
+
+HOVER for documentation:
+- search_code({ search_type: "hover", file_path: "...", line: N, column: M })
+- Use the file_path/line/column from a definition result
+
+EXAMPLES:
+- Find class definition: { query: "UserService", search_type: "definition" }
+- Find all usages: { search_type: "references", file_path: "src/user.ts", line: 10, column: 14 }
+- Get docs: { search_type: "hover", file_path: "src/user.ts", line: 10, column: 14 }
+- Text search: { query: "TODO", search_type: "text" }
+- Regex search: { query: "async\\s+function", search_type: "regex" }`,
 
   inputSchema: {
     type: "object",
     properties: {
       query: {
         type: "string",
-        description: "The text pattern or symbol name to search for",
+        description:
+          "Symbol name or text pattern to search for. Required for definition/text/regex. Not needed for references/hover when file_path/line/column are provided.",
       },
       search_type: {
         type: "string",
-        enum: ["definition", "references", "text", "regex"],
-        description: "Type of search to perform",
+        enum: ["definition", "references", "hover", "text", "regex"],
+        description:
+          "Search type: 'definition' finds symbol declarations, 'references' finds all usages (requires position), 'hover' gets docs (requires position), 'text' for literal search, 'regex' for patterns.",
       },
       path: {
         type: "string",
-        description: 'Root directory to search from (default: ".")',
+        description:
+          "Directory to search in (default: current directory). Only for definition/text/regex.",
+      },
+      file_path: {
+        type: "string",
+        description:
+          "REQUIRED for references/hover. The file_path from a definition search result. Must be an absolute path or relative to working directory.",
+      },
+      line: {
+        type: "integer",
+        description:
+          "REQUIRED for references/hover. 1-based line number from a definition search result.",
+      },
+      column: {
+        type: "integer",
+        description:
+          "REQUIRED for references/hover. 1-based column number from a definition search result. Points to the start of the symbol name.",
       },
       file_types: {
         type: "array",
@@ -581,22 +859,37 @@ export const searchCodeToolHandler: ToolHandler = {
     context: ServerContext,
   ): Promise<MCPToolResult> => {
     try {
-      // Validate required parameters
-      if (typeof params["query"] !== "string") {
-        throw new Error("query must be a string");
+      // Validate required parameters - query is optional for positional references/hover
+      const hasPosition =
+        params["file_path"] !== undefined &&
+        params["line"] !== undefined &&
+        params["column"] !== undefined;
+
+      if (typeof params["query"] !== "string" && !hasPosition) {
+        throw new Error(
+          "query must be a string (or provide file_path/line/column for positional queries)",
+        );
       }
       if (typeof params["search_type"] !== "string") {
         throw new Error("search_type must be a string");
       }
 
       const searchParams: SearchCodeParams = {
-        query: params["query"],
+        query: typeof params["query"] === "string" ? params["query"] : "",
         search_type: params["search_type"] as
           | "definition"
           | "references"
+          | "hover"
           | "text"
           | "regex",
         path: typeof params["path"] === "string" ? params["path"] : undefined,
+        file_path:
+          typeof params["file_path"] === "string"
+            ? params["file_path"]
+            : undefined,
+        line: typeof params["line"] === "number" ? params["line"] : undefined,
+        column:
+          typeof params["column"] === "number" ? params["column"] : undefined,
         file_types: Array.isArray(params["file_types"])
           ? (params["file_types"] as string[])
           : undefined,
@@ -628,24 +921,27 @@ export const searchCodeToolHandler: ToolHandler = {
 
       let json = JSON.stringify(result, null, 2);
 
-      if (json.length > SAFE_SIZE_LIMIT) {
-        result.limit_reason = "output_size_limit";
-        // Iteratively remove results until it fits
-        while (json.length > SAFE_SIZE_LIMIT && result.results.length > 0) {
-          result.results.pop();
+      // Only apply truncation/pagination for SearchResponse (not HoverResponse)
+      if ("results" in result) {
+        if (json.length > SAFE_SIZE_LIMIT) {
+          result.limit_reason = "output_size_limit";
+          // Iteratively remove results until it fits
+          while (json.length > SAFE_SIZE_LIMIT && result.results.length > 0) {
+            result.results.pop();
+            json = JSON.stringify(result, null, 2);
+          }
+        }
+
+        // Add pagination hints
+        const start = searchParams.start ?? 0;
+        const nextStart = start + result.results.length;
+        const remaining = result.total_count - nextStart;
+
+        if (remaining > 0) {
+          result.next_start = nextStart;
+          result.remaining_count = remaining;
           json = JSON.stringify(result, null, 2);
         }
-      }
-
-      // Add pagination hints
-      const start = searchParams.start ?? 0;
-      const nextStart = start + result.results.length;
-      const remaining = result.total_count - nextStart;
-
-      if (remaining > 0) {
-        result.next_start = nextStart;
-        result.remaining_count = remaining;
-        json = JSON.stringify(result, null, 2);
       }
 
       return {
@@ -741,13 +1037,28 @@ async function searchWithLSP(
       );
 
       if (symbols.length > 0) {
-        const results = symbols.map((symbol) => ({
-          file_path: symbol.location.uri.replace("file://", ""),
-          line_number: symbol.location.range.start.line + 1,
-          column: symbol.location.range.start.character + 1,
-          match_text: symbol.name,
-          context: `Symbol: ${symbol.name} (kind: ${symbol.kind})`,
-        }));
+        const results: SearchResult[] = [];
+
+        for (const symbol of symbols) {
+          const filePath = symbol.location.uri.replace("file://", "");
+          const lineNumber = symbol.location.range.start.line + 1;
+
+          // Calculate accurate column by finding the symbol name in the source line
+          const accurateColumn = await findSymbolColumnInFile(
+            filePath,
+            lineNumber,
+            symbol.name,
+            symbol.location.range.start.character + 1,
+          );
+
+          results.push({
+            file_path: filePath,
+            line_number: lineNumber,
+            column: accurateColumn,
+            match_text: symbol.name,
+            context: `Symbol: ${symbol.name} (kind: ${symbol.kind})`,
+          });
+        }
 
         allResults.push(...results);
       }
@@ -828,4 +1139,59 @@ function prioritizeProjects(
     const depthB = b.path.split(path.sep).length;
     return depthA - depthB;
   });
+}
+
+/**
+ * Find the accurate column position of a symbol name in a source file.
+ *
+ * workspace/symbol returns the start of the declaration (e.g., column 1 for "export class Foo"),
+ * but hover/references need the position of the symbol name itself (e.g., column 14 for "Foo").
+ *
+ * This function reads the source line and finds where the symbol name actually starts.
+ */
+async function findSymbolColumnInFile(
+  filePath: string,
+  lineNumber: number,
+  symbolName: string,
+  fallbackColumn: number,
+): Promise<number> {
+  try {
+    const content = await fs.readFile(filePath, "utf-8");
+    const lines = content.split("\n");
+    const line = lines[lineNumber - 1]; // Convert to 0-based
+
+    if (!line) {
+      return fallbackColumn;
+    }
+
+    // Find the symbol name in the line
+    // Use word boundary matching to avoid partial matches
+    // e.g., for "LSPClient", don't match "LSPClientFactory"
+    const regex = new RegExp(`\\b${escapeRegExp(symbolName)}\\b`);
+    const match = line.match(regex);
+
+    if (match && match.index !== undefined) {
+      return match.index + 1; // Convert to 1-based column
+    }
+
+    // Fallback: simple indexOf (less accurate but better than nothing)
+    const index = line.indexOf(symbolName);
+    if (index !== -1) {
+      return index + 1;
+    }
+
+    return fallbackColumn;
+  } catch (error) {
+    printDebug(
+      `[Search] Could not read file for column calculation: ${filePath}`,
+    );
+    return fallbackColumn;
+  }
+}
+
+/**
+ * Escape special regex characters in a string
+ */
+function escapeRegExp(string: string): string {
+  return string.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

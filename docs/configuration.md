@@ -20,13 +20,20 @@ Works out of the box. No API keys, no config files.
 
 The agent relies on a Docker image to run a sandboxed TypeScript environment. To use its full features, you need to install the Docker runtime (you can disable the sandbox MCP server in your config if you do not need this).
 
-The agent also relies on ripgrep and LSP servers to perform code searches. Please ensure they are installed on your system:
+The agent also relies on ripgrep and LSP servers (install them for your selected language) to perform code searches. Please ensure they are installed on your system:
 
 ```bash
 $ rg --version
 ripgrep 13.0.0
+
 $ typescript-language-server --version
 5.1.3
+
+$ rust-analyzer --version
+rust-analyzer 1.91.0 (f8297e3 2025-10-28)
+
+$ which gopls
+
 ```
 
 ### Setup sandbox_ts docker for Windows and Mac users

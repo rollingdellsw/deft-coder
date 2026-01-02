@@ -44,6 +44,18 @@ export interface LSPDiagnostic {
   message: string;
 }
 
+export interface HoverResult {
+  contents:
+    | string
+    | { kind: string; value: string }
+    | Array<string | { kind: string; value: string }>;
+  range?: LSPRange;
+}
+
+export interface ReferenceContext {
+  includeDeclaration: boolean;
+}
+
 export interface PublishDiagnosticsParams {
   uri: string;
   diagnostics: LSPDiagnostic[];
@@ -141,10 +153,14 @@ export class LSPClient {
     );
   }
 
+  // Track spawn errors for start() to check
+  private spawnError: Error | null = null;
+
   public async start(): Promise<boolean> {
     printDebug(
       `[LSPClient] Starting LSP server: ${this.serverCommand.join(" ")}`,
     );
+    this.spawnError = null;
     const [command, ...args] = this.serverCommand;
 
     this.process = spawn(command!, args, {
@@ -169,6 +185,20 @@ export class LSPClient {
       printInfo(`[LSPClient] Server process exited with code ${code}`);
       this.isInitialized = false;
     });
+
+    // Handle spawn errors (e.g., command not found)
+    this.process.on("error", (error) => {
+      printInfo(`[LSPClient] Failed to spawn LSP server: ${error.message}`);
+      this.spawnError = error;
+      this.isInitialized = false;
+    });
+
+    // Small delay to allow spawn error to be caught before initialize
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    if (this.spawnError) {
+      printInfo(`[LSPClient] Spawn failed: ${this.spawnError}`);
+      return false;
+    }
 
     return this.initialize();
   }
@@ -626,6 +656,98 @@ export class LSPClient {
       params,
     );
     return (response.result as DocumentSymbolResponse) ?? [];
+  }
+
+  /**
+   * Go to definition at a specific position (textDocument/definition)
+   * Returns locations where the symbol at the given position is defined.
+   *
+   * @param uri - Document URI (e.g., "file:///path/to/file.ts")
+   * @param position - Position in the document (0-based line and character)
+   * @returns Array of locations where the symbol is defined
+   */
+  public async getDefinition(
+    uri: string,
+    position: LSPPosition,
+  ): Promise<LSPLocation[]> {
+    if (!this.isInitialized) {
+      throw new Error("LSP client is not initialized.");
+    }
+
+    const params = {
+      textDocument: { uri },
+      position,
+    };
+
+    const response = await this.sendRequest("textDocument/definition", params);
+
+    // Response can be Location | Location[] | LocationLink[] | null
+    const result = response.result;
+    if (!result) return [];
+
+    // Normalize to array of LSPLocation
+    if (Array.isArray(result)) {
+      return result.map((item: any) => ({
+        uri: item.uri ?? item.targetUri,
+        range: item.range ?? item.targetSelectionRange,
+      }));
+    }
+
+    // Single location
+    return [{ uri: result.uri, range: result.range }];
+  }
+
+  /**
+   * Find all references to the symbol at a specific position (textDocument/references)
+   * Returns all locations where the symbol is used.
+   *
+   * @param uri - Document URI (e.g., "file:///path/to/file.ts")
+   * @param position - Position in the document (0-based line and character)
+   * @param includeDeclaration - Whether to include the declaration in results (default: true)
+   * @returns Array of locations where the symbol is referenced
+   */
+  public async getReferences(
+    uri: string,
+    position: LSPPosition,
+    includeDeclaration: boolean = true,
+  ): Promise<LSPLocation[]> {
+    if (!this.isInitialized) {
+      throw new Error("LSP client is not initialized.");
+    }
+
+    const params = {
+      textDocument: { uri },
+      position,
+      context: { includeDeclaration },
+    };
+
+    const response = await this.sendRequest("textDocument/references", params);
+    return (response.result as LSPLocation[]) ?? [];
+  }
+
+  /**
+   * Get hover information at a specific position (textDocument/hover)
+   * Returns documentation, type info, etc. for the symbol at the position.
+   *
+   * @param uri - Document URI (e.g., "file:///path/to/file.ts")
+   * @param position - Position in the document (0-based line and character)
+   * @returns Hover result with contents, or null if no hover info available
+   */
+  public async getHover(
+    uri: string,
+    position: LSPPosition,
+  ): Promise<HoverResult | null> {
+    if (!this.isInitialized) {
+      throw new Error("LSP client is not initialized.");
+    }
+
+    const params = {
+      textDocument: { uri },
+      position,
+    };
+
+    const response = await this.sendRequest("textDocument/hover", params);
+    return (response.result as HoverResult) ?? null;
   }
 
   /**
