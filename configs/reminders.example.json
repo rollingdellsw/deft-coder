@@ -169,92 +169,15 @@
     "priority": "high"
   },
   {
-    "id": "patch-guidance",
-    "description": "Reminder before using patch tool",
+    "id": "prefer-lsp-tools",
+    "description": "Prefer LSP-based tools over text search for code navigation",
     "trigger": {
       "type": "tool_call",
-      "toolName": "^patch$"
+      "toolName": "^(read_file|search|agentic_search)$"
     },
-    "content": "Patch Requirements:\n1. Read target file first.\n2. Use argument 'unified_diff' (not 'patch' or 'content').\n3. Standard unified diff format.",
-    "strategy": "sticky",
-    "priority": "high"
-  },
-  {
-    "id": "write-file-guidance",
-    "description": "Reminder before using write_file",
-    "trigger": {
-      "type": "tool_call",
-      "toolName": "^write_file$"
-    },
-    "content": "write_file: Read existing file first, include complete content, preserve formatting.",
-    "strategy": "one_shot",
-    "priority": "medium"
-  },
-  {
-    "id": "sandbox-ts-guidance",
-    "description": "How to use sandbox_ts effectively",
-    "trigger": {
-      "type": "tool_call",
-      "toolName": "^sandbox_ts$"
-    },
-    "content": "sandbox_ts usage:\n- Simple: docker exec deft-ts-sandbox npm install lodash\n- Multi-step: docker exec deft-ts-sandbox bash -c 'npm install && tsx script.ts'\n- Pipes: docker exec deft-ts-sandbox bash -c 'cat file | grep pattern'\nALWAYS use bash -c with single quotes for complex operations.",
-    "strategy": "one_shot",
-    "priority": "medium"
-  },
-  {
-    "id": "sandbox-browser-guidance",
-    "description": "How to use sandbox_browser",
-    "trigger": {
-      "type": "tool_call",
-      "toolName": "^sandbox_browser$"
-    },
-    "content": "sandbox_browser actions:\n- search: query=\"search terms\", maxResults=10\n- fetch: url=\"https://...\" (returns page text)\n- snapshot: url=\"https://...\", fullPage=true (returns PNG screenshot)\nUse search for web research, fetch for documentation.",
-    "strategy": "one_shot",
-    "priority": "low"
-  },
-  {
-    "id": "search-code-guidance",
-    "description": "How to use search_code effectively",
-    "trigger": {
-      "type": "tool_call",
-      "toolName": "^search_code$"
-    },
-    "content": "search_code types:\n- definition: find where symbol is defined\n- references: find where symbol is used\n- text: exact text match\n- regex: pattern match\nExamples: query=\"handleRequest\", search_type=\"definition\"",
-    "strategy": "one_shot",
-    "priority": "low"
-  },
-  {
-    "id": "search-replace-guidance",
-    "description": "search_and_replace workflow",
-    "trigger": {
-      "type": "tool_call",
-      "toolName": "^search_and_replace$"
-    },
-    "content": "search_and_replace workflow:\n1. First call (no free_run): shows preview\n2. Second call (free_run=true): applies changes\n3. Use 'git diff' to verify\nSupports regex with $1, $2 for capture groups.",
-    "strategy": "one_shot",
-    "priority": "medium"
-  },
-  {
-    "id": "run-subtask-guidance",
-    "description": "Best practices for run_subtask",
-    "trigger": {
-      "type": "tool_call",
-      "toolName": "^run_subtask$"
-    },
-    "content": "run_subtask: Clear goal, verify_command to confirm success, max_iterations 5-20.",
+    "content": "PREFER LSP TOOLS: You called a non LSP-based code navigation tool. Unless a previous LSP call returned 'LSP not available', prefer these LSP tools for code navigation:\n- find_definition(query=\"SymbolName\")\n- find_references(file_path, line, column)\n- get_file_structure(file_path)\n- get_hover(file_path, line, column)\n- get_lsp_diagnostics(file_path)\n\nLSP tools are more precise and understand code semantics. Use text search only for: literal strings, comments, non-code files, or when LSP is unavailable.",
     "strategy": "one_shot",
     "priority": "high"
-  },
-  {
-    "id": "git-command-guidance",
-    "description": "git_command usage",
-    "trigger": {
-      "type": "tool_call",
-      "toolName": "^git_command$"
-    },
-    "content": "git_command: All local operations allowed except 'push' (blocked). Use conventional commit messages (feat:, fix:, docs:).",
-    "strategy": "one_shot",
-    "priority": "low"
   },
   {
     "id": "run-test-after-write",
@@ -304,6 +227,48 @@
       }
     },
     "content": "STOP using patch. Read the target file with read_file, then use write_file to replace the entire file content. Do NOT attempt patch again.",
+    "strategy": "one_shot",
+    "priority": "high"
+  },
+  {
+    "id": "edit-lines-repeated-failures",
+    "description": "Force switch to write_file after edit_lines failures",
+    "trigger": {
+      "type": "context",
+      "condition": {
+        "type": "repeated_failures",
+        "toolName": "edit_lines",
+        "count": 2
+      }
+    },
+    "content": "edit_lines failed twice. For complex edits spanning multiple locations, use the patch tool with unified diff format instead. For simple single-location fixes, re-read the file and retry edit_lines with correct line numbers.",
+    "strategy": "one_shot",
+    "priority": "high"
+  },
+  {
+    "id": "edit-lines-reread-required",
+    "description": "Remind LLM to re-read file after edit_lines due to line drift",
+    "trigger": {
+      "type": "tool_result",
+      "toolName": "edit_lines",
+      "success": true
+    },
+    "content": "LINE NUMBERS SHIFTED. For additional edits to this file: either re-read with read_file for updated line numbers, or use patch tool (which ignores line numbers and matches by content).",
+    "strategy": "one_shot",
+    "priority": "high"
+  },
+  {
+    "id": "edit-lines-repeated-failures",
+    "description": "Force switch to write_file after edit_lines failures",
+    "trigger": {
+      "type": "context",
+      "condition": {
+        "type": "repeated_failures",
+        "toolName": "edit_lines",
+        "count": 2
+      }
+    },
+    "content": "STOP using edit_lines. Read the target file with read_file, then use write_file to replace the entire file content. Do NOT attempt edit_lines again.",
     "strategy": "one_shot",
     "priority": "high"
   },

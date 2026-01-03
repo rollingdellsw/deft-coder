@@ -50,15 +50,15 @@ This approach aligns with Anthropic's "progressive disclosure" architecture for 
 ┌─────────────────────────────────────────────────────────────────┐
 │  SkillLoader:                                                   │
 │    1. Load SKILL.md from ~/.config/deft/skills/semantic-search/ │
-│    2. Parse allowed-tools: [mgrep]                              │
-│    3. Inject mgrep tool definition into LLM context             │
+│    2. Parse allowed-tools: [agentic_search]                     │
+│    3. Inject agentic_search tool definition into LLM context    │
 │    4. Return skill instructions to LLM                          │
 └─────────────────────────────────────────────────────────────────┘
                               │
                               ▼ LLM now has the tool available
-┌─────────────────────────────────────────────────────────────────┐
-│  LLM can now call: mgrep({ query: "ToolExecutor", scope: "src"})│
-└─────────────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┐
+│  LLM can now call: agentic_search({ query: "ToolExecutor", scope: "src"})│
+└──────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Try It Out
@@ -67,7 +67,7 @@ Use the test prompts below to see how skills work under Deft.
 
 ---
 
-#### 1. Semantic Search (mgrep)
+#### 1. Semantic Search (agentic_search)
 
 **Precondition**: Confirm a test symbol (e.g., `ToolExecutor`) exists under PWD.
 
@@ -75,7 +75,7 @@ Use the test prompts below to see how skills work under Deft.
 use skill semantic-search to find where <YOUR_SYMBOL> is defined
 ```
 
-**Expect:** Skill loads, then mgrep search results
+**Expect:** Skill loads, then agentic_search search results
 
 ---
 
@@ -105,7 +105,7 @@ use skill web-research to search for "rust async cancellation safety mitigation 
 use skill code-navigation to find the definition of <YOUR_SYMBOL> class
 ```
 
-**Expect:** Skill loads, `search_code` finds class definition with LSP accuracy
+**Expect:** Skill loads, `search_*` group tools finds class definition with LSP accuracy
 
 ---
 
@@ -153,7 +153,7 @@ These skills provide **new tool definitions** that become available after loadin
 
 | Skill             | Injected Tool     | Purpose                              |
 | ----------------- | ----------------- | ------------------------------------ |
-| `semantic-search` | `mgrep`           | AI-powered multi-file code search    |
+| `semantic-search` | `agentic_search`  | AI-powered multi-file code search    |
 | `ts-sandbox`      | `sandbox_ts`      | Execute TypeScript in Docker sandbox |
 | `web-research`    | `sandbox_browser` | Browser automation for web search    |
 | `task-delegation` | `run_subtask`     | Delegate work to sub-agents          |
@@ -162,12 +162,12 @@ These skills provide **new tool definitions** that become available after loadin
 
 These skills provide **usage instructions** for tools that are already available via MCP servers:
 
-| Skill               | MCP Tools Used                                             | Purpose                 |
-| ------------------- | ---------------------------------------------------------- | ----------------------- |
-| `code-navigation`   | `search_code`, `get_file_structure`, `get_lsp_diagnostics` | LSP-based code analysis |
-| `git-scm`           | `git_command`                                              | Git operations          |
-| `filesystem`        | `read_file`, `write_file`, `list_files`                    | File operations         |
-| `project-discovery` | `read_file`, `list_files`, `search_code`                   | Project exploration     |
+| Skill               | MCP Tools Used                                                                                           | Purpose                 |
+| ------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `code-navigation`   | `find_definition`, `find_references`, `get_hover`, `search`, `get_file_structure`, `get_lsp_diagnostics` | LSP-based code analysis |
+| `git-scm`           | `git_command`                                                                                            | Git operations          |
+| `filesystem`        | `read_file`, `write_file`, `list_files`                                                                  | File operations         |
+| `project-discovery` | `read_file`, `list_files`, `find_definition`, `find_references`, `get_hover`, `search`                   | Project exploration     |
 
 > **Note:** MCP tools are always available in the LLM's tool list. Instruction-only skills teach the LLM how to use them effectively for specific workflows.
 
@@ -190,7 +190,7 @@ name: my-skill
 description: One-line description shown in available_skills list
 license: MIT
 allowed-tools:
-  - mgrep
+  - agentic_search
   - sandbox_ts
 metadata:
   author: your-name
@@ -231,7 +231,7 @@ Provide concrete examples the LLM can follow.
 
 The following built-in tools are injected when listed in `allowed-tools`:
 
-- `mgrep` - Smart multi-file search
+- `agentic_search` - Smart multi-file search
 - `run_subtask` - Sub-agent delegation
 - `sandbox_ts` - TypeScript sandbox
 - `sandbox_browser` - Browser automation
@@ -331,11 +331,11 @@ Smart multi-file code search using AI.
 name: semantic-search
 description: Smart multi-file code search with semantic understanding
 allowed-tools:
-  - mgrep
+  - agentic_search
 ---
 ```
 
-**Injects:** `mgrep` tool
+**Injects:** `agentic_search` tool
 
 ### ts-sandbox
 
@@ -408,14 +408,14 @@ Strategies for quickly understanding unfamiliar projects.
 name: project-discovery
 description: Strategies for quickly understanding unfamiliar project structures
 allowed-tools:
-  - mgrep
+  - agentic_search
   - list_files
   - read_file
-  - search_code
+  - search
 ---
 ```
 
-**Injects:** `mgrep` tool
+**Injects:** `agentic_search` tool
 
 ### code-navigation
 
@@ -426,13 +426,13 @@ LSP-based code analysis and navigation.
 name: code-navigation
 description: LSP-based code analysis and navigation
 allowed-tools:
-  - search_code
+  - search
   - get_file_structure
   - get_lsp_diagnostics
 ---
 ```
 
-**Uses MCP tools:** `search_code`, `get_file_structure`, `get_lsp_diagnostics` (instruction-only)
+**Uses MCP tools:** `search`, `get_file_structure`, `get_lsp_diagnostics` (instruction-only)
 
 ### git-scm
 
@@ -477,9 +477,9 @@ read_skill({ name: "semantic-search" })
 SkillLoader.resolve()
     │
     ├── Load SKILL.md content
-    ├── Parse frontmatter (allowed-tools: [mgrep])
-    ├── Look up mgrep in INJECTABLE_TOOLS map
-    └── Return Skill { content, toolDefinitions: [MGrepToolDefinition] }
+    ├── Parse frontmatter (allowed-tools: [agentic_search])
+    ├── Look up agentic_search in INJECTABLE_TOOLS map
+    └── Return Skill { content, toolDefinitions: [AgenticSearchToolDefinition] }
     │
     ▼
 ToolExecutor.onToolInjection callback
@@ -491,7 +491,7 @@ ToolExecutor.onToolInjection callback
 LLMConversation.injectToolsFromSkill()
     │
     ▼
-Next LLM request includes mgrep in tools array
+Next LLM request includes agentic_search in tools array
 ```
 
 ### Package Structure
@@ -522,7 +522,7 @@ interface Skill {
 
 // In skill-loader.ts
 const INJECTABLE_TOOLS: Record<string, LLMToolDefinition> = {
-  mgrep: MGrepToolDefinition,
+  agentic_search: AgenticSearchToolDefinition,
   run_subtask: RunSubtaskToolDefinition,
   sandbox_ts: SANDBOX_TS_TOOL_DEFINITION,
   sandbox_browser: SANDBOX_BROWSER_TOOL_DEFINITION,

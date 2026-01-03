@@ -52,6 +52,63 @@ patch({
 
 ---
 
+### `edit_lines`
+
+Line-based file editing tool. Replaces a range of lines with new content.
+
+**Parameters:**
+
+| Parameter     | Type     | Description                                        |
+| ------------- | -------- | -------------------------------------------------- |
+| `file`        | string   | File path (relative to working directory)          |
+| `start_line`  | number   | Start line number (1-based, inclusive)             |
+| `end_line`    | number   | End line number (1-based, inclusive)               |
+| `replacement` | string[] | Array of replacement lines (empty array to delete) |
+
+**Features:**
+
+- Precise line-based editing using line numbers from `read_file` output
+- Interactive diff review (same UI as `patch` tool)
+- Supports insert, replace, and delete operations
+- Generates unified diff for review before applying
+
+**⚠️ Important: Line Drift**
+
+After each `edit_lines` call, line numbers shift. The guardrail **invalidates** your file snapshot, forcing you to call `read_file` again before the next `edit_lines` on the same file. This prevents editing the wrong lines.
+
+**Examples:**
+
+```javascript
+// Delete lines 5-10
+edit_lines({
+  file: "src/auth.ts",
+  start_line: 5,
+  end_line: 10,
+  replacement: [],
+});
+
+// Replace line 15 with two new lines
+edit_lines({
+  file: "src/auth.ts",
+  start_line: 15,
+  end_line: 15,
+  replacement: [
+    "  const validated = await validateToken(token);",
+    "  return validated;",
+  ],
+});
+
+// Insert before line 5 (use end_line = start_line - 1)
+edit_lines({
+  file: "src/auth.ts",
+  start_line: 5,
+  end_line: 4,
+  replacement: ["// New comment inserted above line 5"],
+});
+```
+
+---
+
 ### `run_cmd`
 
 Execute whitelisted project commands (build, test, lint).
@@ -106,7 +163,7 @@ Load a skill to access its instructions and tools.
 read_skill({ name: "web-research" }); // → unlocks sandbox_browser
 read_skill({ name: "task-delegation" }); // → unlocks run_subtask
 read_skill({ name: "ts-sandbox" }); // → unlocks sandbox_ts
-read_skill({ name: "semantic-search" }); // → unlocks mgrep
+read_skill({ name: "semantic-search" }); // → unlocks agentic_search
 ```
 
 ---
@@ -186,9 +243,9 @@ sandbox_browser({
 
 ---
 
-### `mgrep`
+### `agentic_search`
 
-Smart multi-file code search using a sub-agent.
+Smart multi-file code search using a sub-agent. Use this for complex, semantic queries. For simple text/regex or definition lookups, use the dedicated search tools (`search`, `find_definition`) instead.
 
 **Parameters:**
 
@@ -201,9 +258,9 @@ Smart multi-file code search using a sub-agent.
 **Examples:**
 
 ```javascript
-mgrep({ query: "authentication handler", scope: "src" });
-mgrep({ query: "where is UserService defined", scope: "all" });
-mgrep({ query: "test cases for login", scope: "tests" });
+agentic_search({ query: "authentication handler", scope: "src" });
+agentic_search({ query: "where is UserService defined", scope: "all" });
+agentic_search({ query: "test cases for login", scope: "tests" });
 ```
 
 **Requires:** Load `semantic-search` skill first, or preload it in config.
@@ -308,52 +365,60 @@ Note: Pass the git subcommand without the `git` prefix.
 
 | Tool                  | Description                                       |
 | --------------------- | ------------------------------------------------- |
-| `search_code`         | Search for code patterns (LSP + ripgrep)          |
+| `find_definition`     | Find where a symbol is defined (LSP)              |
+| `find_references`     | Find usages of a symbol at position (LSP)         |
+| `get_hover`           | Get documentation/type info at position (LSP)     |
+| `search`              | Pattern search (ripgrep)                          |
 | `get_file_structure`  | Parse file structure: classes, functions, imports |
 | `search_and_replace`  | Bulk find/replace across files                    |
 | `get_lsp_diagnostics` | Get build errors/warnings for a file              |
 
-**LSP Backend:**
+**LSP Tools:**
 
-The `search_code` tool uses LSP (Language Server Protocol) for `definition` and `references` search types. The LSP backend includes:
-
-- **Automatic workspace detection** - Detects project roots by finding `Cargo.toml`, `tsconfig.json`, `go.mod`, etc.
-- **Monorepo support** - Identifies workspace roots (Cargo workspaces, TypeScript composite projects) and queries only the root LSP server, which indexes all member packages
-- **Single-server caching** - Only one LSP server runs at a time to bound memory usage; switches automatically when querying different projects
-- **Idle timeout** - LSP servers auto-shutdown after 5 minutes of inactivity
-
-When LSP is unavailable or returns no results, `search_code` automatically falls back to ripgrep for text-based searching, which works across all files regardless of project structure.
-
-**Verified Language Support:**
-
-| Language   | LSP Server                 | Monorepo Type      | Status      |
-| ---------- | -------------------------- | ------------------ | ----------- |
-| Rust       | rust-analyzer              | Cargo workspace    | ✅ Verified |
-| TypeScript | typescript-language-server | Composite projects | ✅ Verified |
-| Go         | gopls                      | Go modules         | ✅ Verified |
-| Python     | pylsp                      | -                  | Supported   |
-| Java       | jdtls                      | -                  | Supported   |
-| C/C++      | clangd                     | -                  | Supported   |
+The tools `find_definition`, `find_references`, and `get_hover` use a robust LSP backend that supports automatic workspace detection, monorepos, and single-server caching.
 
 **Examples:**
 
 ```javascript
-// Text search
-search_code({ query: "handleClick", search_type: "text" });
+// 1. Find Definition (LSP)
+// Returns file_path, line, and column.
+find_definition({
+  query: "UserService",
+});
 
-// Find definition (LSP when available, ripgrep fallback)
-search_code({ query: "UserService", search_type: "definition" });
+// 2. Find References (LSP)
+// Uses the precise location from find_definition.
+find_references({
+  file_path: "src/services/user_service.ts",
+  line: 45,
+  column: 14,
+});
 
-// Find references (LSP when available, ripgrep fallback)
-search_code({ query: "authenticate", search_type: "references" });
+// 3. Get Hover (LSP)
+// Get types and documentation at a position.
+get_hover({
+  file_path: "src/services/user_service.ts",
+  line: 45,
+  column: 14,
+});
 
-// Regex search
-search_code({ query: "TODO:.*fix", search_type: "regex" });
+// 4. Text Search (ripgrep)
+// Fast, literal search.
+search({
+  query: "TODO:",
+  path: "src",
+});
 
-// With custom timeout (for large projects)
-search_code({
+// 5. Regex Search (ripgrep)
+// Advanced pattern matching.
+search({
+  pattern: "class\\s+\\w+Controller",
+  file_types: ["ts"],
+});
+
+// 6. With custom timeout (for large projects/slow LSPs like Rust)
+find_definition({
   query: "MySymbol",
-  search_type: "definition",
   timeout_ms: 60000,
 });
 
@@ -377,27 +442,27 @@ Tool visibility is controlled by the `tools.visibilityMode` config option (`"sma
 
 **Smart Mode** (default):
 
-| Role                 | Available Tools                                                                                                                                                                   |
-| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Main**             | All tools except low-level: `search_files`, `git_log`, `git_status`, `web_search`, `fetch_url`                                                                                    |
-| **Executor** (mgrep) | Read-only: `search_files`, `read_file`, `list_files`, `search_code`, `get_file_structure`, `get_lsp_diagnostics`, `web_search`, `fetch_url`, `git_log`, `git_status` (no `mgrep`) |
-| **Subtask**          | All except `run_subtask` (prevents recursion)                                                                                                                                     |
+| Role                          | Available Tools                                                                                                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Main**                      | All tools except low-level: `search_files`, `git_log`, `git_status`, `web_search`, `fetch_url`                                                                                        |
+| **Executor** (agentic_search) | Read-only: `search_files`, `read_file`, `list_files`, `search`, `get_file_structure`, `get_lsp_diagnostics`, `web_search`, `fetch_url`, `git_log`, `git_status` (no `agentic_search`) |
+| **Subtask**                   | All except `run_subtask` (prevents recursion)                                                                                                                                         |
 
 **Manual Mode**:
 
-| Role                 | Available Tools                         |
-| -------------------- | --------------------------------------- |
-| **Main**             | All native + MCP tools                  |
-| **Executor** (mgrep) | All tools except `mgrep` (no recursion) |
-| **Subtask**          | All except `run_subtask` (no recursion) |
+| Role                          | Available Tools                                  |
+| ----------------------------- | ------------------------------------------------ |
+| **Main**                      | All native + MCP tools                           |
+| **Executor** (agentic_search) | All tools except `agentic_search` (no recursion) |
+| **Subtask**                   | All except `run_subtask` (no recursion)          |
 
 **Hybrid Mode**:
 
-| Role                 | Available Tools                                  |
-| -------------------- | ------------------------------------------------ |
-| **Main**             | All tools (both high-level and low-level search) |
-| **Executor** (mgrep) | Same as Smart mode                               |
-| **Subtask**          | All except `run_subtask` (no recursion)          |
+| Role                          | Available Tools                                  |
+| ----------------------------- | ------------------------------------------------ |
+| **Main**                      | All tools (both high-level and low-level search) |
+| **Executor** (agentic_search) | Same as Smart mode                               |
+| **Subtask**                   | All except `run_subtask` (no recursion)          |
 
 ---
 
@@ -407,7 +472,7 @@ Some tools are only available after loading a skill:
 
 | Skill             | Injected Tool     | Purpose              |
 | ----------------- | ----------------- | -------------------- |
-| `semantic-search` | `mgrep`           | Smart code search    |
+| `semantic-search` | `agentic_search`  | Smart code search    |
 | `ts-sandbox`      | `sandbox_ts`      | TypeScript sandbox   |
 | `web-research`    | `sandbox_browser` | Browser automation   |
 | `task-delegation` | `run_subtask`     | Sub-agent delegation |
@@ -445,10 +510,11 @@ Tools are categorized by their confirmation requirements:
 - `read_file`, `list_files`, `search_files` (read-only)
 - `git_log`, `git_status`, `git_diff`, `git_show` (git read operations)
 - `sandbox_ts`, `sandbox_browser` (sandboxed)
-- `mgrep`, `web_search`, `fetch_url`, `read_skill` (safe)
+- `agentic_search`, `web_search`, `fetch_url`, `read_skill` (safe)
 - `run_cmd` (governed by command whitelist)
-- `search_code`, `get_file_structure`, `get_lsp_diagnostics` (read-only)
+- `search`, `get_file_structure`, `get_lsp_diagnostics` (read-only)
 - `patch`, `write_file` (have own diff review UI)
+- `edit_lines` (has own diff review UI)
 
 **Requires confirmation:**
 
@@ -490,7 +556,6 @@ Create a skill that documents how to use existing tools for a specific workflow:
 name: my-workflow
 description: Custom workflow using existing tools
 allowed-tools:
-  - search_code
   - git_command
   - run_cmd
 ---
@@ -502,7 +567,7 @@ Instructions for the LLM on how to combine tools...
 
 The `allowed-tools` list:
 
-- Injects tool definitions (for injectable tools: mgrep, sandbox_ts, etc.)
+- Injects tool definitions (for injectable tools: agentic_search, sandbox_ts, etc.)
 - Bypasses confirmation prompts (for all listed tools)
 - Enables skill script execution (when `run_cmd` is listed)
 
@@ -512,24 +577,25 @@ The `allowed-tools` list:
 
 ### File Operations
 
-| Task           | Tool           | Example                                                               |
-| -------------- | -------------- | --------------------------------------------------------------------- |
-| Read file      | `read_file`    | `read_file({ path: "src/index.ts" })`                                 |
-| Read lines     | `read_file`    | `read_file({ path: "src/index.ts", start_line: 10, line_count: 20 })` |
-| List directory | `list_files`   | `list_files({ path: "src" })`                                         |
-| Find files     | `search_files` | `search_files({ pattern: "*.ts" })`                                   |
-| Write file     | `write_file`   | `write_file({ path: "x.ts", content: "..." })`                        |
-| Apply patch    | `patch`        | `patch({ unified_diff: "..." })`                                      |
+| Task           | Tool           | Example                                                                         |
+| -------------- | -------------- | ------------------------------------------------------------------------------- |
+| Read file      | `read_file`    | `read_file({ path: "src/index.ts" })`                                           |
+| Read lines     | `read_file`    | `read_file({ path: "src/index.ts", start_line: 10, line_count: 20 })`           |
+| List directory | `list_files`   | `list_files({ path: "src" })`                                                   |
+| Find files     | `search_files` | `search_files({ pattern: "*.ts" })`                                             |
+| Write file     | `write_file`   | `write_file({ path: "x.ts", content: "..." })`                                  |
+| Apply patch    | `patch`        | `patch({ unified_diff: "..." })`                                                |
+| Edit lines     | `edit_lines`   | `edit_lines({ file: "x.ts", start_line: 5, end_line: 10, replacement: [...] })` |
 
 ### Code Search
 
-| Task            | Tool                 | Example                                                            |
-| --------------- | -------------------- | ------------------------------------------------------------------ |
-| Semantic search | `mgrep`              | `mgrep({ query: "auth handler" })`                                 |
-| Text search     | `search_code`        | `search_code({ query: "TODO", search_type: "text" })`              |
-| Find definition | `search_code`        | `search_code({ query: "UserService", search_type: "definition" })` |
-| Find references | `search_code`        | `search_code({ query: "login", search_type: "references" })`       |
-| File outline    | `get_file_structure` | `get_file_structure({ file_path: "src/index.ts" })`                |
+| Task            | Tool                 | Example                                                              |
+| --------------- | -------------------- | -------------------------------------------------------------------- |
+| Semantic search | `agentic_search`     | `agentic_search({ query: "auth handler" })`                          |
+| Text search     | `search`             | `search({ query: "TODO" })`                                          |
+| Find definition | `find_definition`    | `find_definition({ query: "UserService" })`                          |
+| Find references | `find_references`    | `find_references({ file_path: "src/user.ts", line: 10, column: 5 })` |
+| File outline    | `get_file_structure` | `get_file_structure({ file_path: "src/index.ts" })`                  |
 
 ### Git Operations
 

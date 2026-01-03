@@ -84,6 +84,7 @@ const MAX_OUTPUT_RETRIES = 3;
 // Track consecutive identical tool calls (loop detection)
 const toolCallHistory = [];
 const MAX_TOOL_HISTORY = 20;
+const MIN_TOOL_HISTORY = 6;  // minimal tool history to trigger loop detection
 
 /**
  * Extract semantic signature from tool call for loop detection.
@@ -104,6 +105,14 @@ function getToolSignature(toolName, args) {
       return JSON.stringify({tool: toolName, files: files.sort()});
     }
 
+    case 'edit_lines': {
+      // For edit_lines: file + line range (content changes expected)
+      const file = args.file || '';
+      const startLine = args.start_line || 0;
+      const endLine = args.end_line || 0;
+      return JSON.stringify({tool: toolName, file, startLine, endLine});
+    }
+
     case 'read_file': {
       // INCLUDE the args in the signature so pagination isn't flagged as a loop
       const path = args.path || args.paths?.[0] || '';
@@ -117,14 +126,26 @@ function getToolSignature(toolName, args) {
       return JSON.stringify({tool: toolName, path: args.path || ''});
     }
 
-    case 'search_code':
-    case 'mgrep': {
+    case 'search':
+    case 'find_definition':
+    case 'agentic_search': {
       // For search: query + scope (slight query variations still count as same
-      // intent)
-      const query =
-          (args.query || '').substring(0, 50);  // Truncate long queries
+      // intent) Handle both 'query' and 'pattern' (for regexp search)
+      const rawQuery = args.query || args.pattern || '';
+      const query = rawQuery.substring(0, 50);  // Truncate long queries
       return JSON.stringify(
           {tool: toolName, query, scope: args.scope || args.path || '.'});
+    }
+
+    case 'find_references':
+    case 'get_hover': {
+      // Position based tools
+      return JSON.stringify({
+        tool: toolName,
+        path: args.file_path || '',
+        line: args.line || 0,
+        col: args.column || 0
+      });
     }
 
     case 'run_cmd': {
@@ -141,6 +162,7 @@ function getToolSignature(toolName, args) {
 /**
  * Detect if we're in a tool call loop (same intent 3+ times in last 6 calls)
  * Uses semantic signatures to catch retries with slightly different args.
+ * Enhanced with time-window and cooldown to reduce false positives.
  */
 function detectLoop(toolName, args) {
   // read_file is exempt from loop detection - re-reading files is normal
@@ -149,8 +171,14 @@ function detectLoop(toolName, args) {
     return false;
   }
 
+  // Check cooldown period - if recently blocked, don't block again
+  const lastBlock = toolCallHistory.find(e => e.wasBlocked);
+  if (lastBlock && Date.now() - lastBlock.timestamp < LOOP_DETECTION_COOLDOWN) {
+    return false;  // In cooldown, allow through
+  }
+
   const signature = getToolSignature(toolName, args);
-  toolCallHistory.push({signature, timestamp: Date.now()});
+  toolCallHistory.push({signature, timestamp: Date.now(), wasBlocked: false});
 
   // Trim old history
   while (toolCallHistory.length > MAX_TOOL_HISTORY) {
@@ -158,12 +186,22 @@ function detectLoop(toolName, args) {
   }
 
   // Check recent calls for repeated signatures
-  if (toolCallHistory.length >= 6) {  // Require more history before detecting
-    const recent = toolCallHistory.slice(-6);
+  if (toolCallHistory.length >=
+      MIN_TOOL_HISTORY) {  // Require more history before detecting
+    const recent = toolCallHistory.slice(-MIN_TOOL_HISTORY);
+
+    // Filter by time window - only count calls within 30 seconds
+    const now = Date.now();
+    const recentInWindow =
+        recent.filter(e => now - e.timestamp < LOOP_DETECTION_TIME_WINDOW);
+    if (recentInWindow.length < LOOP_DETECTION_REPEATS) {
+      return false;  // Not enough recent repeats
+    }
+
     const counts = {};
-    for (const entry of recent) {
+    for (const entry of recentInWindow) {
       counts[entry.signature] = (counts[entry.signature] || 0) + 1;
-      if (counts[entry.signature] >= 4)
+      if (counts[entry.signature] >= LOOP_DETECTION_REPEATS)
         return true;  // Require 4 repeats, not 3
     }
   }
@@ -231,6 +269,12 @@ export default {
         // RULE 0: Loop Detection (Cross-call pattern - tools can't see this)
         // -------------------------------------------------------------------------
         if (detectLoop(ctx.tool.name, ctx.tool.args)) {
+          // Mark this call as blocked in history
+          const lastEntry = toolCallHistory[toolCallHistory.length - 1];
+          if (lastEntry) {
+            lastEntry.wasBlocked = true;
+          }
+
           return {
             allowed: false,
             message:
@@ -243,17 +287,24 @@ export default {
         // -------------------------------------------------------------------------
         // RULE 1: Stale Context Check (Anti-Hallucination)
         // -------------------------------------------------------------------------
-        // If the LLM tries to patch a file, verify that the file hasn't changed
-        // on disk since the LLM last read it via 'read_file'.
-        if (ctx.tool.name === 'patch' || ctx.tool.name === 'write_file') {
+        // If the LLM tries to patch/edit a file, verify that the file hasn't
+        // changed on disk since the LLM last read it via 'read_file'.
+        if (ctx.tool.name === 'patch' || ctx.tool.name === 'write_file' ||
+            ctx.tool.name === 'edit_lines') {
           // For write_file, check the single target file
-          if (ctx.tool.name === 'write_file') {
-            const targetPath = ctx.tool.args.path;
+          if (ctx.tool.name === 'write_file' ||
+              ctx.tool.name === 'edit_lines') {
+            const targetPath = ctx.tool.name === 'edit_lines' ?
+                ctx.tool.args.file :
+                ctx.tool.args.path;
             if (targetPath && await ctx.std.isFileStale(targetPath)) {
               return {
                 allowed: false,
-                message: `SAFETY BLOCK: File '${
-                    targetPath}' has changed on disk since you read it. You MUST call 'read_file' again before overwriting.`
+                message: ctx.tool.name === 'edit_lines' ?
+                    `SAFETY BLOCK: File '${
+                        targetPath}' has changed since you read it. Line numbers may have shifted. You MUST call 'read_file' again to get accurate line numbers before using edit_lines.` :
+                    `SAFETY BLOCK: File '${
+                        targetPath}' has changed on disk since you read it. You MUST call 'read_file' again before overwriting.`
               };
             }
           } else {
@@ -276,9 +327,10 @@ export default {
         // -------------------------------------------------------------------------
         // RULE 2: Protect Critical Files
         // -------------------------------------------------------------------------
-        if (ctx.tool.name === 'write_file' || ctx.tool.name === 'read_file' ||
-            ctx.tool.name === 'patch') {
-          const filePath = ctx.tool.args.path || ctx.tool.args.filepath;
+        if (['write_file', 'read_file', 'patch', 'edit_lines'].includes(
+                ctx.tool.name)) {
+          const filePath = ctx.tool.args.path || ctx.tool.args.filepath ||
+              ctx.tool.args.file;
           // More precise patterns to avoid false positives (e.g.,
           // "my.environment.ts")
           const protectedPatterns = [
@@ -324,8 +376,8 @@ export default {
     // -------------------------------------------------------------------------
     // RULE 3: Auto-Verify Changes After Successful Code Edits (Multi-Language)
     // -------------------------------------------------------------------------
-    const isCodeEditTool =
-        ctx.tool.name === 'patch' || ctx.tool.name === 'write_file';
+    const isCodeEditTool = ctx.tool.name === 'patch' ||
+        ctx.tool.name === 'write_file' || ctx.tool.name === 'edit_lines';
     const isFullSuccess = !ctx.result.isError &&
         !ctx.result.content?.includes('partial') &&
         !ctx.result.content?.includes('PARTIAL');
@@ -340,9 +392,44 @@ export default {
       // Extract first file from unified diff
       const files = ctx.std.parseUnifiedDiff(ctx.tool.args.unified_diff);
       filePath = files[0];
+    } else if (ctx.tool.name === 'edit_lines') {
+      // edit_lines uses 'file' parameter
+      filePath = ctx.tool.args.file;
     } else {
       // write_file uses path directly
       filePath = ctx.tool.args.path || ctx.tool.args.filepath;
+    }
+
+    // -------------------------------------------------------------------------
+    // RULE 4: Invalidate snapshot after edit_lines to force re-read
+    // -------------------------------------------------------------------------
+    // Unlike patch (content-based) or write_file (full replace), edit_lines
+    // depends on accurate line numbers. After an edit, line numbers shift,
+    // so we MUST force the LLM to re-read to get fresh line numbers.
+    //
+    // FIX: Only invalidate if the edit actually succeeded. If it failed,
+    // the file is unchanged and the old snapshot is still valid.
+    if (ctx.tool.name === 'edit_lines' && filePath && !ctx.result.isError) {
+      // Delete the snapshot to force stale context check on next edit
+      ctx.memory.snapshot.delete(filePath);
+
+      // Also try normalized path variants
+      for (const [key] of ctx.memory.snapshot.entries()) {
+        if (key.endsWith('/' + filePath) || key.endsWith('\\' + filePath)) {
+          ctx.memory.snapshot.delete(key);
+        }
+      }
+
+      // Append warning to result
+      const lineWarning =
+          '\n\n⚠️ LINE NUMBERS HAVE CHANGED: You MUST call read_file before any further edit_lines on this file.';
+      if (!ctx.result.content?.includes('LINE NUMBERS HAVE CHANGED')) {
+        return {
+          override: true,
+          isError: ctx.result.isError,
+          result: ctx.result.content + lineWarning
+        };
+      }
     }
 
     if (!filePath) {

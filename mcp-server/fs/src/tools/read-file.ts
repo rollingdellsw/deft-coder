@@ -10,6 +10,25 @@ import {
 const FILE_READ_MAX_OUTPUT_SIZE = 8192;
 
 /**
+ * Add line numbers to content (cat -n style)
+ * Format: "     1\t<line content>"
+ * Line numbers are right-aligned in a 6-character field
+ */
+function addLineNumbers(content: string, startLine: number = 1): string {
+  const lines = content.split("\n");
+  const totalLines = lines.length + startLine - 1;
+  // Calculate width needed for line numbers
+  const width = Math.max(6, String(totalLines).length);
+
+  return lines
+    .map((line, idx) => {
+      const lineNum = String(startLine + idx).padStart(width, " ");
+      return `${lineNum}  ${line}`;
+    })
+    .join("\n");
+}
+
+/**
  * Truncate content with line-aware hint
  */
 function truncateFileContent(
@@ -174,6 +193,7 @@ export const readFileToolHandler: ToolHandler = {
         const start = Math.max(0, startLine - 1);
         const end =
           typeof lineCount === "number" ? start + lineCount : undefined;
+        const actualStartLine = start + 1; // Convert back to 1-based for display
         const subset = lines.slice(start, end);
         const endLine = start + subset.length;
         const hasMore = end !== undefined && end < totalLines;
@@ -181,14 +201,20 @@ export const readFileToolHandler: ToolHandler = {
         let text =
           `[Lines ${startLine}-${endLine} of ${totalLines}]\n` +
           subset.join("\n");
+        // Add line numbers to the subset
+        text =
+          `[Lines ${startLine}-${endLine} of ${totalLines}]\n` +
+          addLineNumbers(subset.join("\n"), actualStartLine);
         if (hasMore) {
           text += `\n[... ${totalLines - endLine} more lines. Use start_line=${endLine + 1} to continue ...]`;
         }
         return { content: [{ type: "text", text }] };
       }
 
+      // Add line numbers to full file content
+      const numberedContent = addLineNumbers(content);
       return {
-        content: [{ type: "text", text: truncateFileContent(content) }],
+        content: [{ type: "text", text: truncateFileContent(numberedContent) }],
       };
     } catch (error) {
       return {

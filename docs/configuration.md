@@ -499,7 +499,7 @@ Control LLM reasoning/thinking capabilities:
 
 There's a hard 5 minutes timeout for LLM reasoning time (reasoning without actionable output), you can set environmental variable MAX_GENERATION_TIME_MS to overwrite this default value.
 
-Thinking for subtask and mgrep are disabled by default. You can enable thinking for subtasks by setting the environment variable `DEFT_SUBTASK_THINKING` to `"on"`. Note that this setting may not work correctly with all thinking-enabled models.
+Thinking for subtask and agentic_search are disabled by default. You can enable thinking for subtasks by setting the environment variable `DEFT_SUBTASK_THINKING` to `"on"`. Note that this setting may not work correctly with all thinking-enabled models.
 
 ---
 
@@ -686,13 +686,16 @@ Tools that execute without user confirmation:
       "read_file",
       "list_files",
       "search_files",
-      "search_code",
+      "find_definition",
+      "find_references",
+      "get_hover",
+      "search",
       "get_file_structure",
       "get_lsp_diagnostics",
       "git_command",
       "sandbox_ts",
       "sandbox_browser",
-      "mgrep",
+      "agentic_search",
       "run_subtask",
       "run_cmd"
     ]

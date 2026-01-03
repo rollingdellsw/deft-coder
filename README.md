@@ -103,6 +103,12 @@ When working with Neovim, select any code, press `<leader>ca`, ask questions or 
 
 → [Neovim Integration Guide](./docs/neovim-integration.md)
 
+#### 2.1 **Full-Auto CLI Workflows**
+
+Unleash the full power of Deft™ directly in your terminal. Combine the flexibility of the CLI with standard input piping, multi-provider configurations, and Git worktrees for completely isolated, parallel agent execution..
+
+[![Watch the CLI mode demo](https://img.youtube.com/vi/cSmkK58PhHs/0.jpg)](https://www.youtube.com/watch?v=cSmkK58PhHs)
+
 ---
 
 ### 3. **Advanced LLM Agent Features**
@@ -161,7 +167,7 @@ $ node --version
 
 # Clone and install globally
 $ git clone https://github.com/rollingdellsw/deft-coder.git
-$ npm install -g ./deft-coder/release/deft-1.0.4.tgz
+$ npm install -g ./deft-coder/release/deft-1.0.5.tgz
 
 # Build the Docker image (Optional, only required for ts-sandbox and browser skills)
 $ docker build -t ts-sandbox ./deft-coder/mcp-server/sandbox-ts
@@ -206,32 +212,39 @@ OpenRouter (default, with GLM 4.7), Anthropic (Claude), OpenAI (GPT), Google (Ge
 
 ### Core Tools (Always Available)
 
-| Tool        | Purpose                               |
-| ----------- | ------------------------------------- |
-| **patch**   | Apply unified diffs with self-healing |
-| **run_cmd** | Execute whitelisted project commands  |
+| Tool            | Purpose                              |
+| --------------- | ------------------------------------ |
+| **run_cmd**     | Execute whitelisted project commands |
+| **run_subtask** | Delegate tasks to sub-agent          |
 
-### MCP Tools (Via Servers)
+### Code Navigation (Via MCP Servers)
 
-| Tool                    | Purpose                                    |
-| ----------------------- | ------------------------------------------ |
-| **read_file**           | Read file contents                         |
-| **write_file**          | Write content to files                     |
-| **list_files**          | List directory contents                    |
-| **search_files**        | Find files by pattern                      |
-| **git_command**         | Git operations (push blocked)              |
-| **search_code**         | LSP + ripgrep code search (monorepo-aware) |
-| **get_file_structure**  | Parse file structure                       |
-| **get_lsp_diagnostics** | Get build errors/warnings                  |
+| Tool                    | Purpose                                |
+| ----------------------- | -------------------------------------- |
+| **find_definition**     | LSP based code search (monorepo-aware) |
+| **find_references**     | LSP based code search (monorepo-aware) |
+| **get_hover**           | LSP based code search (monorepo-aware) |
+| **search**              | ripgrep based code search              |
+| **agentic_search**      | AI-powered semantic search             |
+| **get_file_structure**  | LSP based file structure parsing       |
+| **get_lsp_diagnostics** | Get build errors/warnings              |
+| **git_command**         | Git operations (push blocked)          |
+| **fs_ops**              | Navigate file system under PWD         |
+
+### Code Editing
+
+| Tool           | Purpose                               |
+| -------------- | ------------------------------------- |
+| **patch**      | Apply unified diffs with self-healing |
+| **edit_lines** | Line-based file editing               |
+| **write_file** | Full rewrite a file                   |
 
 ### Skill-Injected Tools (On-Demand)
 
-| Tool                | Skill Required  | Purpose                      |
-| ------------------- | --------------- | ---------------------------- |
-| **mgrep**           | semantic-search | AI-powered code search       |
-| **sandbox_ts**      | ts-sandbox      | TypeScript execution sandbox |
-| **sandbox_browser** | web-research    | Browser automation           |
-| **run_subtask**     | task-delegation | Delegate tasks to sub-agent  |
+| Tool                | Skill Required | Purpose                      |
+| ------------------- | -------------- | ---------------------------- |
+| **sandbox_ts**      | ts-sandbox     | TypeScript execution sandbox |
+| **sandbox_browser** | web-research   | Browser automation           |
 
 Tools are loaded on-demand when a skill needs them.
 

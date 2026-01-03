@@ -12,17 +12,17 @@ Guardrails apply to **all tool executions**, including:
 | ------------------------------ | ------------------ | ----------------------- |
 | Main conversation              | ✅ Yes             | Primary use case        |
 | Sub-task agent (`run_subtask`) | ✅ Yes             | Uses same tool executor |
-| Executor/mgrep                 | ✅ Yes             | Uses same tool executor |
+| Executor/agentic_search        | ✅ Yes             | Uses same tool executor |
 
 This means security rules (like protecting `.env` files) are enforced consistently across all agent loops.
 
 ### Comparison with Other Features
 
-| Feature        | Main Loop | Sub-task | mgrep/Executor |
-| -------------- | --------- | -------- | -------------- |
-| **Guardrails** | ✅        | ✅       | ✅             |
-| **Reminders**  | ✅        | ✅       | ✅             |
-| **Scratchpad** | ✅        | ❌       | ❌             |
+| Feature        | Main Loop | Sub-task | agentic_search/Executor |
+| -------------- | --------- | -------- | ----------------------- |
+| **Guardrails** | ✅        | ✅       | ✅                      |
+| **Reminders**  | ✅        | ✅       | ✅                      |
+| **Scratchpad** | ✅        | ❌       | ❌                      |
 
 **Why the difference?**
 

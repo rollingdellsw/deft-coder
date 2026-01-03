@@ -4,7 +4,10 @@ import { createServer } from "./server.js";
 import { LSPManager } from "./lsp-manager.js";
 import { printDebug } from "./utils/log.js";
 import {
-  searchCodeToolHandler,
+  findDefinitionToolHandler,
+  findReferencesToolHandler,
+  getHoverToolHandler,
+  searchToolHandler,
   getFileStructureToolHandler,
   searchAndReplaceToolHandler,
   getLspDiagnosticsToolHandler,
@@ -127,7 +130,10 @@ const server = createServer({
   version: "1.0.0",
   workingDirectory: workingDir,
   tools: [
-    searchCodeToolHandler,
+    findDefinitionToolHandler,
+    findReferencesToolHandler,
+    getHoverToolHandler,
+    searchToolHandler,
     getFileStructureToolHandler,
     searchAndReplaceToolHandler,
     getLspDiagnosticsToolHandler,

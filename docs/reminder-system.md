@@ -14,15 +14,15 @@ Reminders apply to **all agent loops**:
 | ------------------------------ | ----------------- | ---------------------------------------- |
 | Main conversation              | ✅ Yes            | Primary use case                         |
 | Sub-task agent (`run_subtask`) | ✅ Yes            | Inherits reminder engine from main       |
-| Executor/mgrep                 | ✅ Yes            | Uses shared tool executor with reminders |
+| Executor/agentic_search        | ✅ Yes            | Uses shared tool executor with reminders |
 
 ### Comparison with Other Features
 
-| Feature        | Main Loop | Sub-task | mgrep/Executor |
-| -------------- | --------- | -------- | -------------- |
-| **Reminders**  | ✅        | ✅       | ✅             |
-| **Guardrails** | ✅        | ✅       | ✅             |
-| **Scratchpad** | ✅        | ❌       | ❌             |
+| Feature        | Main Loop | Sub-task | agentic_search/Executor |
+| -------------- | --------- | -------- | ----------------------- |
+| **Reminders**  | ✅        | ✅       | ✅                      |
+| **Guardrails** | ✅        | ✅       | ✅                      |
+| **Scratchpad** | ✅        | ❌       | ❌                      |
 
 **Key insight**: Reminders and Guardrails are applied consistently across all agent loops via the shared tool executor. Scratchpad is for multi-turn memory in the main conversation only.
 
@@ -193,18 +193,21 @@ Fires when user message matches a pattern.
 
 ### `tool_call`
 
-Fires **before** a tool executes.
+Fires **after** a tool executes. Best used sparingly for redirecting toward better tool choices rather than general guidance (use `tool_result` or `tool_error` for post-execution blocking check).
 
 ```json
 {
-  "id": "patch-guidance",
-  "trigger": { "type": "tool_call", "toolName": "^patch$" },
-  "content": "Before patching: ALWAYS read the file first. If patch fails, use write_file.",
+  "id": "prefer-lsp-tools",
+  "trigger": {
+    "type": "tool_call",
+    "toolName": "^(read_file|search|agentic_search)$"
+  },
+  "content": "PREFER LSP TOOLS: Unless LSP is unavailable, prefer find_definition, find_references, get_file_structure for code navigation.",
   "strategy": "one_shot"
 }
 ```
 
-**With file pattern:**
+**With file pattern (use sparingly):**
 
 ```json
 {
@@ -494,9 +497,12 @@ Controls injection order:
 ```json
 [
   {
-    "id": "patch-pre",
-    "trigger": { "type": "tool_call", "toolName": "^patch$" },
-    "content": "Patch checklist:\n1. Read file first\n2. Unified diff format\n3. Fallback: write_file",
+    "id": "prefer-lsp-tools",
+    "trigger": {
+      "type": "tool_call",
+      "toolName": "^(read_file|search|agentic_search)$"
+    },
+    "content": "PREFER LSP TOOLS: Unless LSP is unavailable, prefer find_definition, find_references, get_file_structure for code navigation.",
     "strategy": "one_shot",
     "priority": "high"
   },

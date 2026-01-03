@@ -2,7 +2,7 @@
   "llm": {
     "provider": "anthropic",
     "apiKey": "${ANTHROPIC_API_KEY}",
-    "model": "claude-sonnet-4-5",
+    "model": "claude-opus-4-5",
     "contextWindow": 200000,
     "comment": "Reminder LLM when remaining contextWindow is less than 10000",
     "baseUrl": "https://api.anthropic.com",
@@ -109,13 +109,16 @@
       "read_file",
       "list_files",
       "search_files",
-      "search_code",
+      "find_definition",
+      "find_references",
+      "get_hover",
+      "search",
       "get_file_structure",
       "get_lsp_diagnostics",
       "git_command",
       "sandbox_ts",
       "sandbox_browser",
-      "mgrep",
+      "agentic_search",
       "run_subtask",
       "run_cmd"
     ]

@@ -1,3 +1,12 @@
+# Release v1.0.5
+
+- Split LSP based search_code into three separate tools, find_definition, find_references and get_hover.
+- Merge search_text and search_regx into one search tool.
+- Add edit_lines LLM tool.
+- Fixed reminder injection for tool_call type.
+- Fixed patch return message format for partial success cases.
+- Add line number to `read_file` output.
+
 # Release v1.0.4
 
 - Enable positional queries - definition, references, hover for LSP search_code
