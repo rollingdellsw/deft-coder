@@ -18,6 +18,8 @@ $ deft patch ./llm-generated.patch
 
 [Install it first →](#full-installation)
 
+[Watch the patch command demo](https://www.youtube.com/watch?v=iOGcGzOx1LQ)
+
 ---
 
 ## Want More? Full Agent Mode
@@ -212,10 +214,10 @@ OpenRouter (default, with GLM 4.7), Anthropic (Claude), OpenAI (GPT), Google (Ge
 
 ### Core Tools (Always Available)
 
-| Tool            | Purpose                              |
-| --------------- | ------------------------------------ |
-| **run_cmd**     | Execute whitelisted project commands |
-| **run_subtask** | Delegate tasks to sub-agent          |
+| Tool            | Purpose                            |
+| --------------- | ---------------------------------- |
+| **run_cmd**     | Execute whitelisted shell commands |
+| **run_subtask** | Delegate tasks to sub-agent        |
 
 ### Code Navigation (Via MCP Servers)
 
