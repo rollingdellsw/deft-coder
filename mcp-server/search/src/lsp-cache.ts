@@ -1,6 +1,8 @@
 import { LSPClient } from "./lsp-client.js";
 import { ProjectRoot, LanguageID } from "./project-detector.js";
 import { printDebug, printInfo } from "./utils/log.js";
+import * as path from "path";
+import * as fs from "fs/promises";
 
 interface ServerConfig {
   command: string[];
@@ -12,8 +14,8 @@ const SERVER_CONFIGS: Record<LanguageID, ServerConfig> = {
   python: { command: ["pylsp"] },
   go: { command: ["gopls"] },
   java: { command: ["jdtls"] },
-  cpp: { command: ["clangd"] },
-  c: { command: ["clangd"] },
+  // clangd needs --background-index for workspace/symbol to work
+  cpp: { command: ["clangd", "--background-index"] },
 };
 
 /**
@@ -67,9 +69,24 @@ export class LSPServerCache {
       return null;
     }
 
+    // For C/C++, find compile_commands.json and add --compile-commands-dir if needed
+    let command = [...config.command];
+    if (project.language === "cpp") {
+      const ccDir = await this.findCompileCommandsDir(project.path);
+      if (ccDir) {
+        // Always pass --compile-commands-dir to handle both symlinked and build-dir cases
+        command.push(`--compile-commands-dir=${ccDir}`);
+        printDebug(`[LSP Cache] Using compile_commands.json from: ${ccDir}`);
+      } else if (!ccDir) {
+        printInfo(
+          `[LSP Cache] Warning: No compile_commands.json found for C/C++ project`,
+        );
+      }
+    }
+
     try {
       const client = new LSPClient(
-        config.command,
+        command,
         project.path,
         project.language,
         timeoutMs,
@@ -92,6 +109,34 @@ export class LSPServerCache {
       printInfo(`[LSP Cache] Error starting LSP: ${(error as Error).message}`);
       return null;
     }
+  }
+
+  /**
+   * Find compile_commands.json for C/C++ projects.
+   */
+  private async findCompileCommandsDir(
+    projectPath: string,
+  ): Promise<string | null> {
+    const searchPaths = [
+      projectPath,
+      path.join(projectPath, "build"),
+      path.join(projectPath, "builddir"),
+      path.join(projectPath, "out"),
+      path.join(projectPath, "cmake-build-debug"),
+      path.join(projectPath, "cmake-build-release"),
+      path.join(projectPath, ".build"),
+    ];
+
+    for (const searchPath of searchPaths) {
+      const ccPath = path.join(searchPath, "compile_commands.json");
+      try {
+        await fs.access(ccPath);
+        return searchPath;
+      } catch {
+        // Not found, continue
+      }
+    }
+    return null;
   }
 
   /**

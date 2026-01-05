@@ -4,14 +4,7 @@ import { LSPClient } from "./lsp-client.js";
 import { execSync } from "child_process";
 import { printDebug, printInfo } from "./utils/log.js";
 
-type LanguageID =
-  | "typescript"
-  | "python"
-  | "rust"
-  | "go"
-  | "java"
-  | "cpp"
-  | "c";
+type LanguageID = "typescript" | "python" | "rust" | "go" | "java" | "cpp"; // Covers both C and C++ - no distinction for LSP purposes
 
 /**
  * Find executable in PATH (replacement for 'which' package)
@@ -37,7 +30,6 @@ export class LSPManager {
     ["go", ["gopls"]],
     ["java", ["jdtls"]],
     ["cpp", ["clangd"]],
-    ["c", ["clangd"]],
   ]);
   private detectedServers: Map<LanguageID, string[]> = new Map();
 
@@ -156,6 +148,14 @@ export class LSPManager {
       (await this.fileExists("pyproject.toml"))
     )
       return "python";
+    // C/C++ detection - only compile_commands.json is reliable for LSP
+    if (await this.fileExists("compile_commands.json")) return "cpp";
+    // Also check common build directories
+    if (await this.fileExists("build/compile_commands.json")) return "cpp";
+    if (await this.fileExists("builddir/compile_commands.json")) return "cpp";
+    if (await this.fileExists("out/compile_commands.json")) return "cpp";
+    if (await this.fileExists("cmake-build-debug/compile_commands.json"))
+      return "cpp";
 
     // 2. Fallback: Depth-limited recursive scan for source extensions
     // We limit depth to 3 and ignore common heavy folders to prevent timeouts
@@ -196,8 +196,15 @@ export class LSPManager {
         if (name.endsWith(".rs")) return "rust";
         if (name.endsWith(".go")) return "go";
         if (name.endsWith(".java")) return "java";
-        if (name.endsWith(".cpp") || name.endsWith(".hpp")) return "cpp";
-        if (name.endsWith(".c") || name.endsWith(".h")) return "c";
+        if (
+          name.endsWith(".cpp") ||
+          name.endsWith(".hpp") ||
+          name.endsWith(".c") ||
+          name.endsWith(".h") ||
+          name.endsWith(".cc") ||
+          name.endsWith(".cxx")
+        )
+          return "cpp";
       }
     }
 

@@ -48,7 +48,7 @@ Most coding agents treat LLMs as "black magic"—promising that you can vaguely 
 
     But a search engine is not a replacement for your own reasoning and judgement. You must define the feature, select the dependencies, and design the verification criteria. The LLM is a tool to assist you.
 
-2.  **Implementation as Auto-Completion:**
+2.  **LLM as Advanced Auto-Completion:**
     Once your design is settled, the LLM becomes the ultimate "auto-complete"—executing the implementation details instantly. You provide the architecture; LLM handles the keystrokes, Deft provides the harness and verification.
 
 3.  **Deterministic Control:**

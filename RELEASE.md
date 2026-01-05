@@ -6,6 +6,7 @@
 - Fixed reminder injection for tool_call type.
 - Fixed patch return message format for partial success cases.
 - Add line number to `read_file` output.
+- Add LSP based search for C/C++.
 
 # Release v1.0.4
 

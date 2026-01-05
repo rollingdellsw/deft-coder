@@ -130,7 +130,15 @@ export class LSPClient {
     if (languageId) this.languageId = languageId;
 
     // rust-analyzer needs much longer timeouts for large workspaces
-    if (this.languageId === "rust") {
+    // clangd also needs longer timeouts for large C/C++ projects
+    if (this.languageId === "cpp") {
+      this.requestTimeoutMs =
+        overrideTimeoutMs ??
+        parseInt(process.env[LSPClient.ENV_REQUEST_TIMEOUT] ?? "60000", 10);
+      this.indexWaitMs =
+        overrideTimeoutMs ??
+        parseInt(process.env[LSPClient.ENV_INDEX_TIMEOUT] ?? "10000", 10);
+    } else if (this.languageId === "rust") {
       // Use override if provided, then env var, then default to 120s request / 15s index (soft)
       // Note: index timeout must be < MCP tool call timeout (typically 30s) to allow query time
       this.requestTimeoutMs =
@@ -292,6 +300,22 @@ export class LSPClient {
           enable: false,
         },
       };
+    } else if (this.languageId === "cpp") {
+      return {
+        // clangd specific settings
+        // See: https://clangd.llvm.org/config
+        clangd: {
+          // Enable background indexing
+          arguments: [
+            "--background-index",
+            "--clang-tidy",
+            "--completion-style=detailed",
+            "--header-insertion=iwyu",
+          ],
+        },
+        // Fallback compile flags if no compile_commands.json
+        fallbackFlags: ["-std=c++17", "-Wall"],
+      };
     }
 
     // TypeScript, Python, etc. - no special options needed
@@ -340,44 +364,94 @@ export class LSPClient {
     this.process.stdin?.write(body);
   }
 
-  private buffer = "";
+  private buffer: Buffer = Buffer.alloc(0);
   private handleData(data: Buffer) {
-    this.buffer += data.toString("utf-8");
+    this.buffer = Buffer.concat([this.buffer, data]);
+    printDebug(
+      `[LSPClient] +++ Received ${data.length} bytes, buffer now ${this.buffer.length} bytes`,
+    );
+
+    let messagesProcessed = 0;
     while (true) {
-      const match = this.buffer.match(/Content-Length: (\d+)\r\n\r\n/);
-      if (!match) {
+      const separatorIndex = this.buffer.indexOf("\r\n\r\n");
+      if (separatorIndex === -1) {
+        if (this.buffer.length > 0) {
+          printDebug(
+            `[LSPClient] No header separator found, ${this.buffer.length} bytes waiting`,
+          );
+        }
         break;
+      }
+
+      const headerString = this.buffer
+        .subarray(0, separatorIndex)
+        .toString("ascii");
+      const match = headerString.match(/Content-Length: (\d+)/i);
+
+      if (!match) {
+        printDebug(
+          `[LSPClient] Header found but no Content-Length: ${headerString}`,
+        );
+        // Skip past this invalid header to attempt recovery
+        this.buffer = this.buffer.subarray(separatorIndex + 4);
+        continue;
       }
 
       const contentLength = parseInt(match[1], 10);
-      const messageStart = match.index! + match[0].length;
+      const messageStart = separatorIndex + 4;
+      const totalNeeded = messageStart + contentLength;
 
-      if (this.buffer.length < messageStart + contentLength) {
+      if (this.buffer.length < totalNeeded) {
+        printDebug(
+          `[LSPClient] Partial message: have ${this.buffer.length}, need ${totalNeeded} (content=${contentLength})`,
+        );
         break;
       }
 
-      const messageBody = this.buffer.substring(
-        messageStart,
-        messageStart + contentLength,
-      );
-      this.buffer = this.buffer.substring(messageStart + contentLength);
+      const messageBody = this.buffer
+        .subarray(messageStart, totalNeeded)
+        .toString("utf-8");
+
+      this.buffer = this.buffer.subarray(totalNeeded);
+      messagesProcessed++;
 
       try {
         const message = JSON.parse(messageBody) as RPCMessage;
+
         if ("id" in message) {
-          const callback = this.pendingRequests.get(message.id);
+          // This is a response to a request we made
+          const responseId = message.id;
+          printDebug(
+            `[LSPClient] <<< Response id=${responseId}, pending=[${Array.from(this.pendingRequests.keys())}]`,
+          );
+
+          const callback = this.pendingRequests.get(responseId as number);
           if (callback) {
+            printDebug(`[LSPClient] Resolving request ${responseId}`);
             callback(message);
-            this.pendingRequests.delete(message.id);
+            this.pendingRequests.delete(responseId as number);
+          } else {
+            printDebug(
+              `[LSPClient] WARNING: No pending request for id=${responseId}`,
+            );
           }
         } else {
           // Handle notifications from server (e.g., diagnostics)
+          const method = (message as any).method;
+          printDebug(`[LSPClient] <<< Notification: ${method}`);
           this.handleNotification(message);
         }
       } catch (error) {
-        printInfo("[LSPClient] Error parsing message:", error);
+        printDebug(`[LSPClient] JSON parse error: ${(error as Error).message}`);
+        printDebug(
+          `[LSPClient] Message body (first 200 chars): ${messageBody.substring(0, 200)}`,
+        );
       }
     }
+
+    printDebug(
+      `[LSPClient] --- Processed ${messagesProcessed} messages, ${this.buffer.length} bytes remaining`,
+    );
   }
 
   private handleNotification(notification: RPCNotification): void {
@@ -589,8 +663,8 @@ export class LSPClient {
       python: [".py"],
       go: [".go"],
       java: [".java"],
-      cpp: [".cpp", ".cc", ".cxx", ".hpp"],
-      c: [".c", ".h"],
+      // cpp covers both C and C++
+      cpp: [".c", ".cpp", ".cc", ".cxx", ".h", ".hpp"],
     };
     const extensions = extMap[this.languageId] ?? [".ts"];
     const isSourceFile = (name: string) =>
@@ -604,6 +678,20 @@ export class LSPClient {
         for (const entry of srcEntries) {
           if (entry.isFile() && isSourceFile(entry.name)) {
             return path.join(srcDir, entry.name);
+          }
+          // For C/C++ projects like systemd, source files are in subdirectories
+          if (entry.isDirectory() && !entry.name.startsWith(".")) {
+            try {
+              const subDir = path.join(srcDir, entry.name);
+              const subEntries = await fs.readdir(subDir, {
+                withFileTypes: true,
+              });
+              for (const subEntry of subEntries) {
+                if (subEntry.isFile() && isSourceFile(subEntry.name)) {
+                  return path.join(subDir, subEntry.name);
+                }
+              }
+            } catch {}
           }
         }
       } catch {}

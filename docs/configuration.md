@@ -32,9 +32,14 @@ $ typescript-language-server --version
 $ rust-analyzer --version
 rust-analyzer 1.91.0 (f8297e3 2025-10-28)
 
+$ clangd --version
+clangd version 17.0.3 (https://github.com/llvm/llvm-project 888437e1b60011b8a375dd30928ec925b448da57)
+
 $ which gopls
 
 ```
+
+clangd requires [complicated tweak](https://clangd.llvm.org/design/compile-commands#where-do-compile-commands-come-from) to work with your project, please make sure it can work with your project with an IDE (like neovim with a LSP plugin) first, and make sure clangd is in your PATH.
 
 ### Setup sandbox_ts docker for Windows and Mac users
 

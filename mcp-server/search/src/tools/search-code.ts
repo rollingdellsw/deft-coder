@@ -314,6 +314,8 @@ Example with path filter: { "query": "UserService", "path": "src" }`,
         cache.getCurrentProject(),
       );
       const results: DefinitionResult[] = [];
+      const startTime = Date.now();
+      const actualTimeout = timeoutMs ?? 30000;
 
       for (const project of sortedProjects) {
         if (results.length >= maxResults) break;
@@ -322,43 +324,62 @@ Example with path filter: { "query": "UserService", "path": "src" }`,
         if (!client) continue;
 
         try {
-          const symbols = await client.getWorkspaceSymbols(query);
+          // Polling Loop: Keep trying until we find symbols or timeout
+          // This handles "Cold Start" where LSP returns [] immediately while indexing
+          while (true) {
+            const symbols = await client.getWorkspaceSymbols(query);
 
-          for (const symbol of symbols) {
-            if (results.length >= maxResults) break;
+            if (symbols.length > 0) {
+              for (const symbol of symbols) {
+                if (results.length >= maxResults) break;
 
-            const filePath = symbol.location.uri.replace("file://", "");
-            const lineNumber = symbol.location.range.start.line + 1;
+                const filePath = symbol.location.uri.replace("file://", "");
+                const lineNumber = symbol.location.range.start.line + 1;
 
-            // Filter by path if specified
-            if (searchPath !== ".") {
-              const fullSearchPath = path.resolve(
-                context.workingDirectory,
-                searchPath,
-              );
-              if (!filePath.startsWith(fullSearchPath)) continue;
+                // Filter by path if specified
+                if (searchPath !== ".") {
+                  const fullSearchPath = path.resolve(
+                    context.workingDirectory,
+                    searchPath,
+                  );
+                  if (!filePath.startsWith(fullSearchPath)) continue;
+                }
+
+                // Filter by file type if specified
+                if (fileTypes.length > 0) {
+                  const ext = path.extname(filePath).slice(1);
+                  if (!fileTypes.includes(ext)) continue;
+                }
+
+                const accurateColumn = await findSymbolColumnInFile(
+                  filePath,
+                  lineNumber,
+                  symbol.name,
+                  symbol.location.range.start.character + 1,
+                );
+
+                results.push({
+                  file_path: filePath,
+                  line: lineNumber,
+                  column: accurateColumn,
+                  symbol_name: symbol.name,
+                  kind: getSymbolKindName(symbol.kind),
+                });
+              }
+              // Found symbols in this project, break the retry loop
+              break;
             }
 
-            // Filter by file type if specified
-            if (fileTypes.length > 0) {
-              const ext = path.extname(filePath).slice(1);
-              if (!fileTypes.includes(ext)) continue;
+            // No symbols found yet. Check timeout.
+            if (Date.now() - startTime >= actualTimeout) {
+              break;
             }
 
-            const accurateColumn = await findSymbolColumnInFile(
-              filePath,
-              lineNumber,
-              symbol.name,
-              symbol.location.range.start.character + 1,
+            // Wait 1s before retrying
+            printDebug(
+              `[find_definition] No symbols yet, waiting for index... (${Math.round((Date.now() - startTime) / 1000)}s)`,
             );
-
-            results.push({
-              file_path: filePath,
-              line: lineNumber,
-              column: accurateColumn,
-              symbol_name: symbol.name,
-              kind: getSymbolKindName(symbol.kind),
-            });
+            await new Promise((resolve) => setTimeout(resolve, 1000));
           }
 
           if (project.isWorkspaceRoot && results.length > 0) break;

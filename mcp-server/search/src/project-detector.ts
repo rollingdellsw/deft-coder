@@ -8,8 +8,7 @@ export type LanguageID =
   | "python"
   | "go"
   | "java"
-  | "cpp"
-  | "c";
+  | "cpp"; // Covers both C and C++ - no distinction for LSP purposes
 
 export interface ProjectRoot {
   path: string; // Absolute path to project root
@@ -31,6 +30,8 @@ const CONFIG_MARKERS: ConfigMarker[] = [
   { file: "setup.py", language: "python" },
   { file: "pom.xml", language: "java" },
   { file: "build.gradle", language: "java" },
+  // C/C++: Only compile_commands.json is a valid marker (CMakeLists.txt/Makefile don't help clangd)
+  { file: "compile_commands.json", language: "cpp" },
 ];
 
 const IGNORE_DIRS = new Set([
@@ -44,6 +45,8 @@ const IGNORE_DIRS = new Set([
   "__pycache__",
   "venv",
   ".venv",
+  "builddir",
+  ".meson",
 ]);
 
 export class ProjectDetector {
@@ -72,6 +75,9 @@ export class ProjectDetector {
     // Filter out workspace members (keep only workspace roots for Rust/TS)
     const filtered = await this.filterWorkspaceMembers(projects);
 
+    // Also check for compile_commands.json in common build directories
+    await this.detectCppProjectsInBuildDirs(filtered);
+
     // Sort: prefer shallower paths (root projects first)
     filtered.sort((a, b) => {
       const depthA = a.path.split(path.sep).length;
@@ -86,6 +92,48 @@ export class ProjectDetector {
     this.cacheTime = now;
 
     return filtered;
+  }
+
+  /**
+   * Detect C/C++ projects by looking for compile_commands.json in build directories.
+   * This handles cases where compile_commands.json is in builddir/, build/, etc.
+   */
+  private async detectCppProjectsInBuildDirs(
+    projects: ProjectRoot[],
+  ): Promise<void> {
+    // Check if workspace root has compile_commands.json in a build directory
+    const buildDirs = [
+      "build",
+      "builddir",
+      "out",
+      "cmake-build-debug",
+      "cmake-build-release",
+    ];
+
+    for (const buildDir of buildDirs) {
+      const ccPath = path.join(
+        this.workspaceRoot,
+        buildDir,
+        "compile_commands.json",
+      );
+      if (await this.fileExists(ccPath)) {
+        // Check if we already have a cpp project for this root
+        const existing = projects.find(
+          (p) => p.path === this.workspaceRoot && p.language === "cpp",
+        );
+        if (!existing) {
+          projects.push({
+            path: this.workspaceRoot,
+            language: "cpp",
+            configFile: `${buildDir}/compile_commands.json`,
+          });
+          printDebug(
+            `[ProjectDetector] Found C/C++ project via ${buildDir}/compile_commands.json: ${this.workspaceRoot}`,
+          );
+        }
+        break; // Found one, no need to check others
+      }
+    }
   }
 
   /**
@@ -365,6 +413,57 @@ export class ProjectDetector {
         `[ProjectDetector] Error scanning ${dir}: ${(error as Error).message}`,
       );
     }
+  }
+
+  /**
+   * Find compile_commands.json for C/C++ projects.
+   * Searches common build directories and symlinks.
+   * Returns the directory containing compile_commands.json, or null.
+   */
+  async findCompileCommandsDir(projectPath: string): Promise<string | null> {
+    // Common locations for compile_commands.json
+    const searchPaths = [
+      projectPath, // Root (symlinked)
+      path.join(projectPath, "build"),
+      path.join(projectPath, "builddir"),
+      path.join(projectPath, "out"),
+      path.join(projectPath, "cmake-build-debug"),
+      path.join(projectPath, "cmake-build-release"),
+      path.join(projectPath, ".build"),
+    ];
+
+    for (const searchPath of searchPaths) {
+      const ccPath = path.join(searchPath, "compile_commands.json");
+      if (await this.fileExists(ccPath)) {
+        printDebug(
+          `[ProjectDetector] Found compile_commands.json at: ${ccPath}`,
+        );
+        return searchPath;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Get the effective project root for LSP.
+   * For C/C++ projects, this may be different from the config file location
+   * if compile_commands.json is in a build directory.
+   */
+  async getEffectiveLspRoot(project: ProjectRoot): Promise<string> {
+    if (project.language === "cpp") {
+      // For C/C++, we need to find where compile_commands.json actually is
+      const ccDir = await this.findCompileCommandsDir(project.path);
+      if (ccDir && ccDir !== project.path) {
+        printDebug(
+          `[ProjectDetector] Using compile_commands.json directory for LSP: ${ccDir}`,
+        );
+        // Still return project.path as LSP root, but the compile_commands.json
+        // location will be handled by clangd's --compile-commands-dir flag
+        return project.path;
+      }
+    }
+    return project.path;
   }
 
   private async fileExists(filePath: string): Promise<boolean> {
