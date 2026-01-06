@@ -7,6 +7,7 @@
 - Fixed patch return message format for partial success cases.
 - Add line number to `read_file` output.
 - Add LSP based search for C/C++.
+- Add proactive LSP server warm up logic for C/C++ and Rust.
 
 # Release v1.0.4
 

@@ -12,6 +12,7 @@ import {
   searchAndReplaceToolHandler,
   getLspDiagnosticsToolHandler,
 } from "./tools/index.js";
+import { getLSPCache } from "./lsp-cache.js";
 
 // Get working directory from env or use cwd
 const workingDir = process.env["WORKING_DIR"] ?? process.cwd();
@@ -142,6 +143,9 @@ const server = createServer({
 
 // Start server immediately to handle 'initialize' request and avoid timeout
 server.start();
+
+// Proactive LSP Warmup: Start indexing immediately in background for Rust/C++
+getLSPCache().startWarmup(workingDir);
 
 // Run LSP check in background
 checkLspAvailability(workingDir).catch((error) => {

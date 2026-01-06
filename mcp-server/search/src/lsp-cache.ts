@@ -1,6 +1,7 @@
 import { LSPClient } from "./lsp-client.js";
 import { ProjectRoot, LanguageID } from "./project-detector.js";
 import { printDebug, printInfo } from "./utils/log.js";
+import { ProjectDetector } from "./project-detector.js";
 import * as path from "path";
 import * as fs from "fs/promises";
 
@@ -28,9 +29,15 @@ export class LSPServerCache {
   private currentClient: LSPClient | null = null;
   private currentProject: ProjectRoot | null = null;
   private idleTimer: NodeJS.Timeout | null = null;
+  private warmupPromise: Promise<void> | null = null;
+  private warmupStartTime: number | null = null;
+  private warmupComplete: boolean = false;
+  private warmupLanguage: LanguageID | null = null;
 
   /** Idle timeout before auto-shutdown (5 minutes) */
   private readonly IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+  /** Warmup timeout (10 minutes - generous for huge projects) */
+  private readonly WARMUP_TIMEOUT_MS = 10 * 60 * 1000;
 
   /**
    * Get LSP client for a project.
@@ -112,6 +119,82 @@ export class LSPServerCache {
   }
 
   /**
+   * Proactively start LSP warmup for slow-indexing languages.
+   * Call this when MCP server starts, before any tool calls.
+   * Does not block - runs in background.
+   */
+  startWarmup(workspaceRoot: string): void {
+    if (this.warmupPromise) {
+      printDebug("[LSP Cache] Warmup already in progress");
+      return;
+    }
+
+    this.warmupStartTime = Date.now();
+    this.warmupPromise = this.doWarmup(workspaceRoot);
+
+    // Don't await - let it run in background
+    this.warmupPromise
+      .then(() => {
+        this.warmupComplete = true;
+        const elapsed = Date.now() - (this.warmupStartTime ?? 0);
+        printInfo(
+          `[LSP Cache] Warmup complete for ${this.warmupLanguage} in ${(elapsed / 1000).toFixed(1)}s`,
+        );
+      })
+      .catch((err) => {
+        printDebug(`[LSP Cache] Warmup failed: ${(err as Error).message}`);
+        this.warmupComplete = true; // Mark complete so we don't block
+      });
+  }
+
+  private async doWarmup(workspaceRoot: string): Promise<void> {
+    const detector = new ProjectDetector(workspaceRoot);
+    const projects = await detector.detectProjects();
+
+    // Find first project that needs slow warmup (prefer rust, then cpp).
+    // NOTE: In monorepos with multiple Rust/C++ projects, only the first one
+    // gets warmed up. This is intentional to limit resource usage - the LSP
+    // cache only holds one server at a time anyway. Subsequent projects will
+    // warm up on first access.
+    const slowProject =
+      projects.find((p) => p.language === "rust") ??
+      projects.find((p) => p.language === "cpp");
+
+    if (!slowProject) {
+      printDebug(
+        "[LSP Cache] No slow-init projects (rust/cpp) found, skipping warmup",
+      );
+      return;
+    }
+
+    this.warmupLanguage = slowProject.language;
+    printInfo(
+      `[LSP Cache] Starting proactive warmup for ${slowProject.language} at ${slowProject.path}`,
+    );
+
+    // This will trigger full indexing - use generous 10 min timeout
+    await this.getClient(slowProject, this.WARMUP_TIMEOUT_MS);
+  }
+
+  /**
+   * Get warmup status for error messages and retry guidance.
+   */
+  getWarmupStatus(): {
+    inProgress: boolean;
+    elapsedMs: number;
+    language: LanguageID | null;
+  } {
+    if (this.warmupComplete || !this.warmupStartTime) {
+      return { inProgress: false, elapsedMs: 0, language: null };
+    }
+    return {
+      inProgress: true,
+      elapsedMs: Date.now() - this.warmupStartTime,
+      language: this.warmupLanguage,
+    };
+  }
+
+  /**
    * Find compile_commands.json for C/C++ projects.
    */
   private async findCompileCommandsDir(
@@ -157,11 +240,13 @@ export class LSPServerCache {
   }
 
   /**
-   * Stop the current LSP server and clear cache
+   * Stop the current LSP server.
    */
   async stopCurrent(): Promise<void> {
     if (this.currentClient) {
       printDebug(`[LSP Cache] Stopping LSP at ${this.currentProject?.path}`);
+
+      // Normal shutdown - stop the process
       try {
         await this.currentClient.stop();
       } catch (error) {

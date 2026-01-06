@@ -219,11 +219,73 @@ function formatResponse(data: unknown): MCPToolResult {
   };
 }
 
-function formatError(message: string): MCPToolResult {
+function formatError(
+  message: string,
+  context?: { language?: string; isTimeout?: boolean },
+): MCPToolResult {
+  let fullMessage = message;
+
+  // Add actionable guidance for LSP timeouts
+  if (context?.isTimeout) {
+    const lang = context.language ?? "unknown";
+    const warmupStatus = getLSPCache().getWarmupStatus();
+
+    // Include warmup progress if relevant
+    if (warmupStatus.inProgress && warmupStatus.language === lang) {
+      const elapsedSec = Math.round(warmupStatus.elapsedMs / 1000);
+      fullMessage =
+        `${message}\n\n[LSP Warmup In Progress]\n` +
+        `The ${lang} language server has been indexing for ${elapsedSec}s.\n` +
+        `This is normal for large projects. Please retry in 30-60 seconds.\n\n` +
+        getLspTimeoutGuidance(lang);
+    } else {
+      fullMessage = `${message}\n\n` + getLspTimeoutGuidance(lang);
+    }
+  }
+
   return {
-    content: [{ type: "text", text: `Error: ${message}` }],
+    content: [{ type: "text", text: `Error: ${fullMessage}` }],
     isError: true,
   };
+}
+
+/**
+ * Provide honest, actionable guidance when LSP times out.
+ * Different languages have different caching behaviors.
+ */
+function getLspTimeoutGuidance(language: string): string {
+  switch (language) {
+    case "rust":
+      return `[Rust LSP Timeout]
+rust-analyzer does NOT persist its index to disk.
+- First call in a session is always slow (indexing from scratch)
+- Subsequent calls in the SAME session will be fast
+- Retry this call in 30-60 seconds, or use text search as fallback
+- If you keep timing out, the project may be too large for CLI usage`;
+
+    case "cpp":
+      return `[C/C++ LSP Timeout]
+clangd DOES persist its index to disk (.cache/clangd/index/).
+- First run on a project: slow (building index)
+- Subsequent runs: should be fast (loading from disk)
+- If this is a repeated timeout, the project may be too large
+- Fallback: use text search with 'search' tool`;
+
+    case "typescript":
+    case "go":
+    case "python":
+      return `[${language} LSP Timeout]
+This language usually has fast LSP startup.
+- Check if the project is unusually large
+- Verify the language server is installed correctly
+- Fallback: use text search with 'search' tool`;
+
+    default:
+      return `[LSP Timeout]
+The language server did not respond in time.
+- The project may be too large for LSP
+- Fallback: use text search with 'search' tool`;
+  }
 }
 
 // ============================================================================
@@ -391,9 +453,21 @@ Example with path filter: { "query": "UserService", "path": "src" }`,
       }
 
       if (results.length === 0) {
+        // Check warmup status for better messaging
+        const warmupStatus = getLSPCache().getWarmupStatus();
+        const isWarmingUp =
+          warmupStatus.inProgress &&
+          warmupStatus.language === sortedProjects[0]?.language;
+        const warmupElapsedSec = Math.round(warmupStatus.elapsedMs / 1000);
+
         return formatResponse({
           results: [],
-          message: `No definition found for "${query}". The symbol may not exist or LSP may still be indexing.`,
+          message: isWarmingUp
+            ? `No definition found for "${query}". LSP is still indexing (${warmupElapsedSec}s elapsed). Retry in 30-60s.`
+            : `No definition found for "${query}". The symbol may not exist or LSP may still be indexing.`,
+          lsp_status: isWarmingUp ? "warmup_indexing" : "no_match",
+          language: sortedProjects[0]?.language,
+          ...(isWarmingUp && { warmup_elapsed_sec: warmupElapsedSec }),
         });
       }
 
@@ -531,9 +605,13 @@ Example: { "file_path": "src/user.ts", "line": 10, "column": 14 }`,
           total_count: references.length,
         });
       } catch (error) {
-        return formatError(
-          `LSP references failed: ${(error as Error).message}`,
-        );
+        const errMsg = (error as Error).message;
+        const isTimeout =
+          errMsg.includes("timeout") || errMsg.includes("Timeout");
+        return formatError(`LSP references failed: ${errMsg}`, {
+          language: project.language,
+          isTimeout,
+        });
       }
     } catch (error) {
       return formatError((error as Error).message);
@@ -645,7 +723,13 @@ Example: { "file_path": "src/user.ts", "line": 10, "column": 14 }`,
           column,
         });
       } catch (error) {
-        return formatError(`LSP hover failed: ${(error as Error).message}`);
+        const errMsg = (error as Error).message;
+        const isTimeout =
+          errMsg.includes("timeout") || errMsg.includes("Timeout");
+        return formatError(`LSP hover failed: ${errMsg}`, {
+          language: project.language,
+          isTimeout,
+        });
       }
     } catch (error) {
       return formatError((error as Error).message);
