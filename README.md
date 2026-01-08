@@ -159,6 +159,53 @@ The agent preserves LLM sessions to a state that can be faithfully restored from
 
 ---
 
+## IDE for LLMs
+
+Force LLM to navigate your code base over LSP interface, instead of relying on ripgrep.
+
+### Code Navigation
+
+| Tool                    | Purpose                                      |
+| ----------------------- | -------------------------------------------- |
+| **search**              | Default LSP symbol search, fall back to grep |
+| **read_file**           | Read file content with inlay hints           |
+| **get_references**      | LSP based reference search (monorepo-aware)  |
+| **get_implementation**  | LSP based implementation search              |
+| **get_hover**           | LSP based code search (monorepo-aware)       |
+| **get_file_structure**  | LSP based file structure parsing             |
+| **get_lsp_diagnostics** | Get build errors/warnings                    |
+| **git_command**         | Git operations (push blocked)                |
+| **fs_ops**              | Navigate file system under PWD (ls, find)    |
+
+### Code Editing
+
+| Tool           | Purpose                               |
+| -------------- | ------------------------------------- |
+| **patch**      | Apply unified diffs with self-healing |
+| **edit_lines** | Line-based file editing               |
+| **write_file** | Full rewrite a file                   |
+
+### Core Tools (Always Available)
+
+| Tool               | Purpose                            |
+| ------------------ | ---------------------------------- |
+| **run_cmd**        | Execute whitelisted shell commands |
+| **run_subtask**    | Delegate tasks to sub-agent        |
+| **agentic_search** | AI-powered semantic search         |
+
+### Skill-Injected Tools (On-Demand)
+
+| Tool                | Skill Required | Purpose                      |
+| ------------------- | -------------- | ---------------------------- |
+| **sandbox_ts**      | ts-sandbox     | TypeScript execution sandbox |
+| **sandbox_browser** | web-research   | Browser automation           |
+
+Tools are loaded on-demand when a skill needs them.
+
+→ [Tools Reference](./docs/tools.md)
+
+---
+
 ## Configuration
 
 ### Full Installation
@@ -169,7 +216,7 @@ $ node --version
 
 # Clone and install globally
 $ git clone https://github.com/rollingdellsw/deft-coder.git
-$ npm install -g ./deft-coder/release/deft-1.0.5.tgz
+$ npm install -g ./deft-coder/release/deft-1.0.6.tgz
 
 # Build the Docker image (Optional, only required for ts-sandbox and browser skills)
 $ docker build -t ts-sandbox ./deft-coder/mcp-server/sandbox-ts
@@ -207,50 +254,6 @@ Options:
 OpenRouter (default, with GLM 4.7), Anthropic (Claude), OpenAI (GPT), Google (Gemini via API key or Vertex AI via Application Default Credentials), and more. Can mix any models as planner/executor combinations.
 
 → [Full Configuration Guide](./docs/configuration.md)
-
----
-
-## Available Tools
-
-### Core Tools (Always Available)
-
-| Tool            | Purpose                            |
-| --------------- | ---------------------------------- |
-| **run_cmd**     | Execute whitelisted shell commands |
-| **run_subtask** | Delegate tasks to sub-agent        |
-
-### Code Navigation (Via MCP Servers)
-
-| Tool                    | Purpose                                |
-| ----------------------- | -------------------------------------- |
-| **find_definition**     | LSP based code search (monorepo-aware) |
-| **find_references**     | LSP based code search (monorepo-aware) |
-| **get_hover**           | LSP based code search (monorepo-aware) |
-| **search**              | ripgrep based code search              |
-| **agentic_search**      | AI-powered semantic search             |
-| **get_file_structure**  | LSP based file structure parsing       |
-| **get_lsp_diagnostics** | Get build errors/warnings              |
-| **git_command**         | Git operations (push blocked)          |
-| **fs_ops**              | Navigate file system under PWD         |
-
-### Code Editing
-
-| Tool           | Purpose                               |
-| -------------- | ------------------------------------- |
-| **patch**      | Apply unified diffs with self-healing |
-| **edit_lines** | Line-based file editing               |
-| **write_file** | Full rewrite a file                   |
-
-### Skill-Injected Tools (On-Demand)
-
-| Tool                | Skill Required | Purpose                      |
-| ------------------- | -------------- | ---------------------------- |
-| **sandbox_ts**      | ts-sandbox     | TypeScript execution sandbox |
-| **sandbox_browser** | web-research   | Browser automation           |
-
-Tools are loaded on-demand when a skill needs them.
-
-→ [Tools Reference](./docs/tools.md)
 
 ---
 

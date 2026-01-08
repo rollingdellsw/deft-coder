@@ -202,7 +202,7 @@ Fires **after** a tool executes. Best used sparingly for redirecting toward bett
     "type": "tool_call",
     "toolName": "^(read_file|search|agentic_search)$"
   },
-  "content": "PREFER LSP TOOLS: Unless LSP is unavailable, prefer find_definition, find_references, get_file_structure for code navigation.",
+  "content": "PREFER LSP TOOLS: Unless LSP is unavailable, prefer get_references, get_file_structure for code navigation.",
   "strategy": "one_shot"
 }
 ```
@@ -502,7 +502,7 @@ Controls injection order:
       "type": "tool_call",
       "toolName": "^(read_file|search|agentic_search)$"
     },
-    "content": "PREFER LSP TOOLS: Unless LSP is unavailable, prefer find_definition, find_references, get_file_structure for code navigation.",
+    "content": "PREFER LSP TOOLS: Unless LSP is unavailable, prefer get_references, get_file_structure for code navigation.",
     "strategy": "one_shot",
     "priority": "high"
   },

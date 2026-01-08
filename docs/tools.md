@@ -303,7 +303,7 @@ These tools are provided by Model Context Protocol servers and are available dir
 
 | Tool               | Description                                     |
 | ------------------ | ----------------------------------------------- |
-| `read_file`        | Read file contents                              |
+| `read_file`        | Read file contents (includes LSP inlay hints)   |
 | `write_file`       | Write content to a file (requires confirmation) |
 | `list_files`       | List directory contents                         |
 | `search_files`     | Search for files using glob pattern             |
@@ -363,32 +363,33 @@ Note: Pass the git subcommand without the `git` prefix.
 
 ### Search Server
 
-| Tool                  | Description                                       |
-| --------------------- | ------------------------------------------------- |
-| `find_definition`     | Find where a symbol is defined (LSP)              |
-| `find_references`     | Find usages of a symbol at position (LSP)         |
-| `get_hover`           | Get documentation/type info at position (LSP)     |
-| `search`              | Pattern search (ripgrep)                          |
-| `get_file_structure`  | Parse file structure: classes, functions, imports |
-| `search_and_replace`  | Bulk find/replace across files                    |
-| `get_lsp_diagnostics` | Get build errors/warnings for a file              |
+| Tool                  | Description                                        |
+| --------------------- | -------------------------------------------------- |
+| `get_references`      | Find usages of a symbol at position (LSP)          |
+| `get_hover`           | Get documentation/type info at position (LSP)      |
+| `get_implementation`  | Find concrete implementations of a trait (LSP)     |
+| `search`              | Unified search: tries LSP symbols first, then text |
+| `get_file_structure`  | Parse file structure: classes, functions, imports  |
+| `search_and_replace`  | Bulk find/replace across files                     |
+| `get_lsp_diagnostics` | Get build errors/warnings for a file               |
 
 **LSP Tools:**
 
-The tools `find_definition`, `find_references`, and `get_hover` use a robust LSP backend that supports automatic workspace detection, monorepos, and single-server caching.
+The tools `search` (in LSP mode), `get_references`, `get_hover`, and `get_implementation` use a robust LSP backend that supports automatic workspace detection, monorepos, and single-server caching.
 
 **Examples:**
 
 ```javascript
-// 1. Find Definition (LSP)
+// 1. Unified Search (LSP + Text Fallback)
+// Finds symbol definitions first. If none found, falls back to text search.
 // Returns file_path, line, and column.
-find_definition({
+search({
   query: "UserService",
 });
 
 // 2. Find References (LSP)
 // Uses the precise location from find_definition.
-find_references({
+get_references({
   file_path: "src/services/user_service.ts",
   line: 45,
   column: 14,
@@ -402,22 +403,22 @@ get_hover({
   column: 14,
 });
 
-// 4. Text Search (ripgrep)
-// Fast, literal search.
-search({
-  query: "TODO:",
-  path: "src",
+// 4. Get Implementation (LSP)
+// Find concrete implementations of interfaces/traits.
+get_implementation({
+  file_path: "src/services/user_service.ts",
+  line: 45,
+  column: 14,
 });
 
-// 5. Regex Search (ripgrep)
-// Advanced pattern matching.
+// 5. Text-Only Search (via exclusion or fallback)
 search({
-  pattern: "class\\s+\\w+Controller",
-  file_types: ["ts"],
+  query: "TODO:",
+  path: "src", // "path" param implies text search usually, but LSP is tried first if "query" looks like a symbol
 });
 
 // 6. With custom timeout (for large projects/slow LSPs like Rust)
-find_definition({
+search({
   query: "MySymbol",
   timeout_ms: 60000,
 });
@@ -589,13 +590,13 @@ The `allowed-tools` list:
 
 ### Code Search
 
-| Task            | Tool                 | Example                                                              |
-| --------------- | -------------------- | -------------------------------------------------------------------- |
-| Semantic search | `agentic_search`     | `agentic_search({ query: "auth handler" })`                          |
-| Text search     | `search`             | `search({ query: "TODO" })`                                          |
-| Find definition | `find_definition`    | `find_definition({ query: "UserService" })`                          |
-| Find references | `find_references`    | `find_references({ file_path: "src/user.ts", line: 10, column: 5 })` |
-| File outline    | `get_file_structure` | `get_file_structure({ file_path: "src/index.ts" })`                  |
+| Task            | Tool                 | Example                                                             |
+| --------------- | -------------------- | ------------------------------------------------------------------- |
+| Semantic search | `agentic_search`     | `agentic_search({ query: "auth handler" })`                         |
+| Text search     | `search`             | `search({ query: "TODO" })`                                         |
+| Find definition | `find_definition`    | `find_definition({ query: "UserService" })`                         |
+| Find references | `get_references`     | `get_references({ file_path: "src/user.ts", line: 10, column: 5 })` |
+| File outline    | `get_file_structure` | `get_file_structure({ file_path: "src/index.ts" })`                 |
 
 ### Git Operations
 

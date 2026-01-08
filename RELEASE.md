@@ -1,3 +1,11 @@
+# Release v1.0.6
+
+- Force LLM to use default LSP tools to navigate code base.
+- Merge find_definition and search tool into single search tool, default to LSP search, fall back to grep, no regexp grep.
+- Default give inlay hints to read_file content, if the file is from Rust, TypeScript, C/C++.
+- Add get_implementation LSP tool.
+
+
 # Release v1.0.5
 
 - Split LSP based search_code into three separate tools, find_definition, find_references and get_hover.

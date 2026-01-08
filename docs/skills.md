@@ -162,12 +162,12 @@ These skills provide **new tool definitions** that become available after loadin
 
 These skills provide **usage instructions** for tools that are already available via MCP servers:
 
-| Skill               | MCP Tools Used                                                                                           | Purpose                 |
-| ------------------- | -------------------------------------------------------------------------------------------------------- | ----------------------- |
-| `code-navigation`   | `find_definition`, `find_references`, `get_hover`, `search`, `get_file_structure`, `get_lsp_diagnostics` | LSP-based code analysis |
-| `git-scm`           | `git_command`                                                                                            | Git operations          |
-| `filesystem`        | `read_file`, `write_file`, `list_files`                                                                  | File operations         |
-| `project-discovery` | `read_file`, `list_files`, `find_definition`, `find_references`, `get_hover`, `search`                   | Project exploration     |
+| Skill               | MCP Tools Used                                                                                          | Purpose                 |
+| ------------------- | ------------------------------------------------------------------------------------------------------- | ----------------------- |
+| `code-navigation`   | `find_definition`, `get_references`, `get_hover`, `search`, `get_file_structure`, `get_lsp_diagnostics` | LSP-based code analysis |
+| `git-scm`           | `git_command`                                                                                           | Git operations          |
+| `filesystem`        | `read_file`, `write_file`, `list_files`                                                                 | File operations         |
+| `project-discovery` | `read_file`, `list_files`, `get_references`, `get_hover`, `search`                                      | Project exploration     |
 
 > **Note:** MCP tools are always available in the LLM's tool list. Instruction-only skills teach the LLM how to use them effectively for specific workflows.
 
