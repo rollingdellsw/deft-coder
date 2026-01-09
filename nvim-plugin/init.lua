@@ -311,12 +311,6 @@ function M.setup_keymaps()
   vim.keymap.set('n', M.config.keymaps.code_query, function()
     require("deft").start_deft_normal_mode()
   end, { desc = 'Toggle Deft terminal', silent = true })
-
-  -- Terminal mode toggle (Correctly exits insert mode first)
-  vim.keymap.set('t', M.config.keymaps.code_query, function()
-    vim.cmd('stopinsert')
-    require("deft").start_deft_normal_mode()
-  end, { desc = 'Toggle Deft terminal', silent = true })
 end
 
 function M.setup_autocmds()

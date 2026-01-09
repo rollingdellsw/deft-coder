@@ -4,6 +4,7 @@
 - Merge find_definition and search tool into single search tool, default to LSP search, fall back to grep, no regexp grep.
 - Default give inlay hints to read_file content, if the file is from Rust, TypeScript, C/C++.
 - Add get_implementation LSP tool.
+- Fix input 'ca' started words causing deft toggle.
 
 
 # Release v1.0.5
