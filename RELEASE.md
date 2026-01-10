@@ -5,6 +5,7 @@
 - Default give inlay hints to read_file content, if the file is from Rust, TypeScript, C/C++.
 - Add get_implementation LSP tool.
 - Fix input 'ca' started words causing deft toggle.
+- Allow LLM to execute command with user confirmation.
 
 
 # Release v1.0.5

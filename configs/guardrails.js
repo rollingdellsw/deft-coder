@@ -137,7 +137,7 @@ function getToolSignature(toolName, args) {
           {tool: toolName, query, scope: args.scope || args.path || '.'});
     }
 
-    case 'find_references':
+    case 'get_references':
     case 'get_hover': {
       // Position based tools
       return JSON.stringify({
@@ -209,6 +209,53 @@ function detectLoop(toolName, args) {
 }
 
 /**
+ * Commands that are blocked in run_cmd because we have better built-in tools.
+ * These patterns match the START of commands to catch variations.
+ */
+const BLOCKED_SHELL_COMMANDS = [
+  // File reading - use read_file instead
+  { pattern: /^cat\s/, message: "Use 'read_file' tool instead of 'cat'" },
+  { pattern: /^head\s/, message: "Use 'read_file' with line_count instead of 'head'" },
+  { pattern: /^tail\s/, message: "Use 'read_file' with start_line instead of 'tail'" },
+  { pattern: /^less\s/, message: "Use 'read_file' tool instead of 'less'" },
+  { pattern: /^more\s/, message: "Use 'read_file' tool instead of 'more'" },
+
+  // File listing - use list_files instead
+  { pattern: /^ls\s/, message: "Use 'list_files' tool instead of 'ls'" },
+  { pattern: /^ls$/, message: "Use 'list_files' tool instead of 'ls'" },
+  { pattern: /^find\s/, message: "Use 'list_files' or 'search' tool instead of 'find'" },
+  { pattern: /^tree\s/, message: "Use 'list_files' tool instead of 'tree'" },
+  { pattern: /^tree$/, message: "Use 'list_files' tool instead of 'tree'" },
+
+  // Search - use search tool instead
+  { pattern: /^grep\s/, message: "Use 'search' tool instead of 'grep'" },
+  { pattern: /^rg\s/, message: "Use 'search' tool instead of 'rg'" },
+  { pattern: /^ag\s/, message: "Use 'search' tool instead of 'ag'" },
+  { pattern: /^ack\s/, message: "Use 'search' tool instead of 'ack'" },
+
+  // File editing - use patch/edit_lines/write_file instead
+  { pattern: /^sed\s/, message: "Use 'patch' or 'edit_lines' tool instead of 'sed'" },
+  { pattern: /^awk\s/, message: "Use 'patch' or 'edit_lines' tool instead of 'awk'" },
+  { pattern: /^patch\s/, message: "Use built-in 'patch' tool instead of shell patch command" },
+  { pattern: /^ed\s/, message: "Use 'edit_lines' tool instead of 'ed'" },
+
+  // Git operations - use git_command instead
+  { pattern: /^git\s+diff/, message: "Use 'git_diff' tool instead of 'git diff'" },
+  { pattern: /^git\s+log/, message: "Use 'git_log' tool instead of 'git log'" },
+  { pattern: /^git\s+status/, message: "Use 'git_status' tool instead of 'git status'" },
+  { pattern: /^git\s+show/, message: "Use 'git_show' tool instead of 'git show'" },
+  { pattern: /^git\s+blame/, message: "Use 'git_command' tool instead of shell git" },
+  { pattern: /^git\s+branch/, message: "Use 'git_command' tool instead of shell git" },
+  { pattern: /^git\s+checkout/, message: "Use 'git_command' tool instead of shell git" },
+  { pattern: /^git\s+stash/, message: "Use 'git_command' tool instead of shell git" },
+
+  // Dangerous operations
+  { pattern: /^rm\s+-rf?\s/, message: "Recursive delete is not allowed. Use 'delete_file' for single files." },
+  { pattern: /^chmod\s/, message: "Changing file permissions is not allowed" },
+  { pattern: /^chown\s/, message: "Changing file ownership is not allowed" },
+];
+
+/**
  * Detect project type from file path and working directory
  * @param {string} filePath - The file being modified
  * @param {{readFile: function, getChecksum: function}} fsApi - Filesystem API
@@ -265,6 +312,24 @@ export default {
    */
   input:
       async (ctx) => {
+
+        // -------------------------------------------------------------------------
+        // RULE 0: Block shell commands that duplicate built-in tools
+        // -------------------------------------------------------------------------
+        if (ctx.tool.name === 'run_cmd') {
+          const command = ctx.tool.args.command || '';
+          const trimmedCommand = command.trim();
+
+          for (const blocked of BLOCKED_SHELL_COMMANDS) {
+            if (blocked.pattern.test(trimmedCommand)) {
+              return {
+                allowed: false,
+                message: `BLOCKED: ${blocked.message}. Shell commands for code navigation/editing are not allowed when better tools exist.`
+              };
+            }
+          }
+        }
+
         // -------------------------------------------------------------------------
         // RULE 0: Loop Detection (Cross-call pattern - tools can't see this)
         // -------------------------------------------------------------------------

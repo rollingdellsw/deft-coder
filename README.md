@@ -187,11 +187,11 @@ Force LLM to navigate your code base over LSP interface, instead of relying on r
 
 ### Core Tools (Always Available)
 
-| Tool               | Purpose                            |
-| ------------------ | ---------------------------------- |
-| **run_cmd**        | Execute whitelisted shell commands |
-| **run_subtask**    | Delegate tasks to sub-agent        |
-| **agentic_search** | AI-powered semantic search         |
+| Tool               | Purpose                     |
+| ------------------ | --------------------------- |
+| **run_cmd**        | Execute shell commands      |
+| **run_subtask**    | Delegate tasks to sub-agent |
+| **agentic_search** | AI-powered semantic search  |
 
 ### Skill-Injected Tools (On-Demand)
 
