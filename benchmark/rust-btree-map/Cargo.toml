@@ -1,0 +1,16 @@
+[package]
+name = "btree_map"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "btree_map"
+path = "src/lib/btree_map.rs"
+
+[[bin]]
+name = "btree_map_main"
+path = "src/main.rs"
+
+
+[dependencies]
+rand = { version = "0.8.5" }
