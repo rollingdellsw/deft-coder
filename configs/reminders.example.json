@@ -169,17 +169,6 @@
     "priority": "high"
   },
   {
-    "id": "prefer-lsp-tools",
-    "description": "Prefer LSP-based tools over text search for code navigation",
-    "trigger": {
-      "type": "tool_call",
-      "toolName": "^(read_file|search|agentic_search)$"
-    },
-    "content": "PREFER LSP TOOLS: You called a non LSP-based code navigation tool. Unless a previous LSP call returned 'LSP not available', prefer these LSP tools for code navigation:\n- find_definition(query=\"SymbolName\")\n- find_references(file_path, line, column)\n- get_file_structure(file_path)\n- get_hover(file_path, line, column)\n- get_lsp_diagnostics(file_path)\n\nLSP tools are more precise and understand code semantics. Use text search only for: literal strings, comments, non-code files, or when LSP is unavailable.",
-    "strategy": "one_shot",
-    "priority": "high"
-  },
-  {
     "id": "run-test-after-write",
     "description": "Run tests after writing test files",
     "trigger": {
@@ -226,49 +215,7 @@
         "count": 2
       }
     },
-    "content": "STOP using patch. Read the target file with read_file, then use write_file to replace the entire file content. Do NOT attempt patch again.",
-    "strategy": "one_shot",
-    "priority": "high"
-  },
-  {
-    "id": "edit-lines-repeated-failures",
-    "description": "Force switch to write_file after edit_lines failures",
-    "trigger": {
-      "type": "context",
-      "condition": {
-        "type": "repeated_failures",
-        "toolName": "edit_lines",
-        "count": 2
-      }
-    },
-    "content": "edit_lines failed twice. For complex edits spanning multiple locations, use the patch tool with unified diff format instead. For simple single-location fixes, re-read the file and retry edit_lines with correct line numbers.",
-    "strategy": "one_shot",
-    "priority": "high"
-  },
-  {
-    "id": "edit-lines-reread-required",
-    "description": "Remind LLM to re-read file after edit_lines due to line drift",
-    "trigger": {
-      "type": "tool_result",
-      "toolName": "edit_lines",
-      "success": true
-    },
-    "content": "LINE NUMBERS SHIFTED. For additional edits to this file: either re-read with read_file for updated line numbers, or use patch tool (which ignores line numbers and matches by content).",
-    "strategy": "one_shot",
-    "priority": "high"
-  },
-  {
-    "id": "edit-lines-repeated-failures",
-    "description": "Force switch to write_file after edit_lines failures",
-    "trigger": {
-      "type": "context",
-      "condition": {
-        "type": "repeated_failures",
-        "toolName": "edit_lines",
-        "count": 2
-      }
-    },
-    "content": "STOP using edit_lines. Read the target file with read_file, then use write_file to replace the entire file content. Do NOT attempt edit_lines again.",
+    "content": "STOP using patch. Read the target file with read_file, then use write_file to replace the entire file content. Do NOT attempt patch again. If you are trying revert to changes, call git_command directly",
     "strategy": "one_shot",
     "priority": "high"
   },
@@ -292,7 +239,7 @@
       "toolName": "patch",
       "outputPattern": "No changes could be applied|No hunks could be applied"
     },
-    "content": "PATCH FAILED. Do NOT retry patch.\n1. Read target file once (full content)\n2. Use write_file to make changes directly\n3. If changes already exist, report success",
+    "content": "PATCH FAILED. Do NOT retry patch.\n1. Read target file once (full content)\n2. Use write_file to make changes directly\n3. If you are trying to revert changes, call git_command directly",
     "strategy": "one_shot",
     "priority": "high"
   },

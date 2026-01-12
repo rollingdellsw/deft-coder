@@ -535,6 +535,15 @@ export default {
             (build.stdout + build.stderr).substring(0, 1000)}`);
       } else {
         verifyResults.push(`BUILD [${projectConfig.projectType}]: OK`);
+
+        // Auto-commit on successful build as backup checkpoint
+        try {
+          await ctx.system.cmd.exec('git add -u');
+          await ctx.system.cmd.exec('git commit -m "patch passed build, backup it"');
+          verifyResults.push('GIT BACKUP: Committed successfully');
+        } catch {
+          // Ignore git errors (e.g., nothing to commit, not a git repo)
+        }
       }
     }
 

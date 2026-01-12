@@ -6,6 +6,7 @@
 - Add get_implementation LSP tool.
 - Fix input 'ca' started words causing deft toggle.
 - Allow LLM to execute command with user confirmation.
+- Disable edit_lines tool, as LLM prefer to call this over patch tool, causing a lot of failure.
 
 
 # Release v1.0.5

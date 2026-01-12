@@ -94,7 +94,7 @@
       "list_files",
       "search_files",
       "find_definition",
-      "find_references",
+      "get_references",
       "get_hover",
       "search",
       "get_file_structure",

@@ -5,7 +5,7 @@ license: MIT
 allowed-tools:
   - agentic_search
   - find_definition
-  - find_references
+  - get_references
   - get_hover
   - search
   - get_file_structure

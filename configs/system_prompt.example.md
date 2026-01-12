@@ -15,3 +15,8 @@ Before implementing any solution, consider:
 1. **Alternative approaches** - evaluate at least 2-3 different solutions
 2. **Long-term implications** - maintainability, scalability, technical debt
 3. **Production risks** - failure modes, security vulnerabilities, performance bottlenecks
+
+## Development Process
+
+1. **Proactively debug** - When not certain, add debug print to verify your assumption first.
+2. **Use version control** - Use git_command to save your incremental achievement frequently, use git_command to rollback failed trial, don't rely on editing for rollback.

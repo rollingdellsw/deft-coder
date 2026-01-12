@@ -31,7 +31,7 @@ export OPENROUTER_API_KEY="your_key"   # Or ANTHROPIC_API_KEY, GEMINI_API_KEY, O
 $ deft
 ```
 
-The default configuration works out of the box for coding tasks. Customization is available (everything listed under [Advanced Features](#3-advanced-llm-agent-features) are configurable) but not required.
+The default configuration works out of the box for coding tasks. Customization is available (everything listed under [Advanced Features](#4-advanced-llm-agent-features) are configurable) but not required.
 
 → [Full Configuration Guide](./docs/configuration.md)
 
@@ -105,17 +105,20 @@ When working with Neovim, select any code, press `<leader>ca`, ask questions or 
 
 → [Neovim Integration Guide](./docs/neovim-integration.md)
 
-#### 2.1 **Full-Auto CLI Workflows**
+### 3 **Full-Auto CLI Workflows**
 
 Unleash the full power of Deft™ directly in your terminal. Combine the flexibility of the CLI with standard input piping, multi-provider configurations, and Git worktrees for completely isolated, parallel agent execution..
 
-[![Watch the CLI mode demo](https://img.youtube.com/vi/cSmkK58PhHs/0.jpg)](https://www.youtube.com/watch?v=cSmkK58PhHs)
+With the full [IDE for LLMs](#ide-for-llms) harness design, it enabled GLM 4.7 model to solve a **HARD** level Rust programming challenge: implementing the core alagorithm for B-Tree Map:
+[![Watch the CLI mode demo](https://img.youtube.com/vi/XwBdbyLwO6w/0.jpg)](https://www.youtube.com/watch?v=XwBdbyLwO6w)
+
+The whole session took about 1 hour, with hundreds tool calls from GLM 4.7, and 4 total attempts. You can review GLM 4.7's result from commit 1c02631240288, and compare it to the reference result from Opus 4.5 in benchmark/rust-btree-map-verified.
 
 ---
 
-### 3. **Advanced LLM Agent Features**
+### 4. **Advanced LLM Agent Features**
 
-#### 3.1. **Reminder System — Boost LLM Performance With Dynamic Context Injection**
+#### 4.1. **Reminder System — Boost LLM Performance With Dynamic Context Injection**
 
 Give an LLM a 1000-line system prompt and 100 MCP tools - it loses focus and ignores your intentions. Deft™'s Reminder Engine injects context-aware guidance exactly when needed.
 
@@ -123,7 +126,7 @@ Give an LLM a 1000-line system prompt and 100 MCP tools - it loses focus and ign
 
 ---
 
-#### 3.2. **Programmable Guardrails — "Linter" for Agent Behavior**
+#### 4.2. **Programmable Guardrails — "Linter" for Agent Behavior**
 
 While Reminders are "soft" suggestions, Guardrails are **"hard" rules**. You can define policy checks in JavaScript that run **before** (input) and **after** (output) tools execute.
 
@@ -131,7 +134,7 @@ The default guardrail config will reject 'patch' calls if the file content has c
 
 ---
 
-#### 3.3. **Skills System — Anthropic Claude Skills Spec Support**
+#### 4.3. **Skills System — Anthropic Claude Skills Spec Support**
 
 Deft™ implements the [Anthropic Claude Skills specification](https://github.com/anthropics/skills), enabling dynamic capability loading with minimal context overhead.
 
@@ -139,7 +142,7 @@ Deft™ implements the [Anthropic Claude Skills specification](https://github.co
 
 ---
 
-#### 3.4. **MCP for Tool Extension**
+#### 4.4. **MCP for Tool Extension**
 
 This agent supports adding existing MCP servers. Simply add an MCP server like [Chrome Devtool MCP](https://github.com/ChromeDevTools/chrome-devtools-mcp/blob/main/docs/tool-reference.md) to the agent [configuration file](./configs/config.openai.json).
 
@@ -147,13 +150,13 @@ The tools from the newly added MCP server will not be visible to the LLM by defa
 
 ---
 
-#### 3.5. **Faithful Full Reasoning Continuity Across Providers**
+#### 4.5. **Faithful Full Reasoning Continuity Across Providers**
 
 This agent strictly follows providers' ([Gemini](https://ai.google.dev/gemini-api/docs/thought-signatures), [OpenRouter](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens#preserving-reasoning-blocks), [Claude](https://platform.claude.com/docs/en/build-with-claude/extended-thinking#interleaved-thinking), [OpenAI Responses API](https://platform.openai.com/docs/api-reference/responses)) official API documentation for [fully interleaved thinking](./docs/sample_session_interaction.json) behaviors, to preserve the complete "Reasoning Chain" across turns.
 
 ---
 
-#### 3.6. **Stateful Cognitive Persistence & Branching**
+#### 4.6. **Stateful Cognitive Persistence & Branching**
 
 The agent preserves LLM sessions to a state that can be faithfully restored from local session logs. This also allows the user to branch out any session from any intermediate user message — no **context compression**, no pruning. You manage the context when Deft™ warns that your context size limit is approaching.
 
@@ -182,7 +185,6 @@ Force LLM to navigate your code base over LSP interface, instead of relying on r
 | Tool           | Purpose                               |
 | -------------- | ------------------------------------- |
 | **patch**      | Apply unified diffs with self-healing |
-| **edit_lines** | Line-based file editing               |
 | **write_file** | Full rewrite a file                   |
 
 ### Core Tools (Always Available)
