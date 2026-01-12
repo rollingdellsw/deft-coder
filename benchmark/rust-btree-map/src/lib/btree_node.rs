@@ -128,18 +128,17 @@ impl<K, V> Node<K, V> {
         //   - keys[B-1] is promoted to parent (via extract_middle called separately)
         //   - New node gets keys[B..2B-1] (last B keys), children[B..2B] (last B+1 children)
         unsafe {
-            // Copy last B keys/values to new_node (indices B to 2B-1)
-            ptr::copy_nonoverlapping(self.keys.as_ptr().add(B), new_node.keys.as_mut_ptr(), B);
-            ptr::copy_nonoverlapping(self.values.as_ptr().add(B), new_node.values.as_mut_ptr(), B);
-            // Copy last B+1 children to new_node (indices B to 2B)
-            ptr::copy_nonoverlapping(
-                self.children.as_ptr().add(B),
-                new_node.children.as_mut_ptr(),
-                B + 1,
-            );
-
-            // Clear moved children in original node
-            for i in B..=(2 * B) {
+              // Copy last B keys/values to new_node (indices B to 2B-1)
+              ptr::copy_nonoverlapping(self.keys.as_ptr().add(B), new_node.keys.as_mut_ptr(), B);
+              ptr::copy_nonoverlapping(self.values.as_ptr().add(B), new_node.values.as_mut_ptr(), B);
+              // Clone last B+1 children to new_node (indices B to 2B)
+              // We must use clone() instead of ptr::copy_nonoverlapping because Rc is not Copy
+              for i in B..=(2 * B) {
+                  new_node.children[i - B] = self.children[i].clone();
+              }
+  
+              // Clear moved children in original node
+              for i in B..=(2 * B) {
                 self.children[i] = None;
             }
 

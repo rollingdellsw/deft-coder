@@ -3,6 +3,7 @@
 
 use std::borrow::Borrow;
 use std::cell::RefCell;
+use std::mem::MaybeUninit;
 use std::ptr;
 use std::rc::Rc;
 
@@ -238,18 +239,43 @@ where
         ret
     }
 
-    fn fix_underflow(&mut self, node_ref: &Rc<RefCell<Node<K, V>>>, child_idx: usize) {
-        let child_len = {
-            let node = RefCell::borrow(node_ref);
-            node.children[child_idx]
-                .as_ref()
-                .map(|c| RefCell::borrow(c).length)
-                .unwrap_or(0)
-        };
+      fn fix_underflow(&mut self, node_ref: &Rc<RefCell<Node<K, V>>>, child_idx: usize) {
+          let child_len = {
+              let node = RefCell::borrow(node_ref);
+              node.children[child_idx]
+                  .as_ref()
+                  .map(|c| RefCell::borrow(c).length)
+                  .unwrap_or(0)
+          };
+    
+            // If child is completely empty, clear it from parent
+            if child_len == 0 {
+                let mut node = node_ref.borrow_mut();
+                let node_len = node.length as usize;
+                
+                unsafe {
+                    // Use temporary buffer to avoid Stacked Borrows violation
+                    let mut temp_keys: [MaybeUninit<K>; 2 * B] = MaybeUninit::uninit().assume_init();
+                    // Shift keys left starting from child_idx
+                    for i in (child_idx + 1)..node_len {
+                        temp_keys[i - child_idx] = MaybeUninit::new(node.keys[i].assume_init_read());
+                    }
+                    for i in (child_idx + 1)..node_len {
+                        node.keys[i - 1].write(temp_keys[i - child_idx].assume_init_read());
+                    }
+                }
+                // Shift children left
+                for i in child_idx..node_len {
+                    node.children[i] = node.children[i + 1].take();
+                }
+                node.children[node_len] = None;
+                node.length -= 1;
+                return;
+            }
 
-        if child_len >= (B - 1) as u16 {
-            return;
-        }
+          if child_len >= (B - 1) as u16 {
+              return;
+          }
 
         let node_len = RefCell::borrow(node_ref).length as usize;
 
@@ -325,23 +351,24 @@ where
         let child = RefCell::borrow(node_ref).children[child_idx]
             .clone()
             .unwrap();
-        {
-            let mut child_node = child.borrow_mut();
-            let child_len = child_node.length as usize;
-            unsafe {
-                ptr::copy(
-                    child_node.keys.as_ptr(),
-                    child_node.keys.as_mut_ptr().add(1),
-                    child_len,
-                );
-                ptr::copy(
-                    child_node.values.as_ptr(),
-                    child_node.values.as_mut_ptr().add(1),
-                    child_len,
-                );
-                child_node.keys[0].write(sep_key);
-                child_node.values[0].write(sep_val);
-                child_node.length += 1;
+          {
+              let mut child_node = child.borrow_mut();
+              let child_len = child_node.length as usize;
+              unsafe {
+                  // Use temporary buffer to avoid Stacked Borrows violation
+                  let mut temp_keys: [MaybeUninit<K>; 2 * B] = MaybeUninit::uninit().assume_init();
+                  let mut temp_values: [MaybeUninit<V>; 2 * B] = MaybeUninit::uninit().assume_init();
+                  for i in 0..child_len {
+                      temp_keys[i] = MaybeUninit::new(child_node.keys[i].assume_init_read());
+                      temp_values[i] = MaybeUninit::new(child_node.values[i].assume_init_read());
+                  }
+                  for i in (0..child_len).rev() {
+                      child_node.keys[i + 1].write(temp_keys[i].assume_init_read());
+                      child_node.values[i + 1].write(temp_values[i].assume_init_read());
+                  }
+                  child_node.keys[0].write(sep_key);
+                  child_node.values[0].write(sep_val);
+                  child_node.length += 1;
             }
             if !child_node.is_leaf() {
                 let left_child = {
@@ -370,25 +397,26 @@ where
             }
         };
 
-        let (right_key, right_val) = {
-            let mut right = right_sibling.borrow_mut();
-            unsafe {
-                let k = right.keys[0].assume_init_read();
-                let v = right.values[0].assume_init_read();
-                let right_len = right.length as usize;
-                ptr::copy(
-                    right.keys.as_ptr().add(1),
-                    right.keys.as_mut_ptr(),
-                    right_len - 1,
-                );
-                ptr::copy(
-                    right.values.as_ptr().add(1),
-                    right.values.as_mut_ptr(),
-                    right_len - 1,
-                );
-                right.length -= 1;
-                (k, v)
-            }
+          let (right_key, right_val) = {
+              let mut right = right_sibling.borrow_mut();
+              unsafe {
+                  let k = right.keys[0].assume_init_read();
+                  let v = right.values[0].assume_init_read();
+                  let right_len = right.length as usize;
+                  // Use temporary buffer to avoid Stacked Borrows violation
+                  let mut temp_keys: [MaybeUninit<K>; 2 * B] = MaybeUninit::uninit().assume_init();
+                  let mut temp_values: [MaybeUninit<V>; 2 * B] = MaybeUninit::uninit().assume_init();
+                  for i in 0..(right_len - 1) {
+                      temp_keys[i] = MaybeUninit::new(right.keys[i + 1].assume_init_read());
+                      temp_values[i] = MaybeUninit::new(right.values[i + 1].assume_init_read());
+                  }
+                  for i in 0..(right_len - 1) {
+                      right.keys[i].write(temp_keys[i].assume_init_read());
+                      right.values[i].write(temp_values[i].assume_init_read());
+                  }
+                  right.length -= 1;
+                  (k, v)
+              }
         };
 
         {
@@ -438,24 +466,35 @@ where
             }
         };
 
-        {
-            let mut left_mut = left_sibling.borrow_mut();
-            let child_node = RefCell::borrow(&child);
-            let left_len = left_mut.length as usize;
-            let child_len = child_node.length as usize;
-            unsafe {
-                left_mut.keys[left_len].write(sep_key);
-                left_mut.values[left_len].write(sep_val);
-                ptr::copy_nonoverlapping(
-                    child_node.keys.as_ptr(),
-                    left_mut.keys.as_mut_ptr().add(left_len + 1),
-                    child_len,
-                );
-                ptr::copy_nonoverlapping(
-                    child_node.values.as_ptr(),
-                    left_mut.values.as_mut_ptr().add(left_len + 1),
-                    child_len,
-                );
+          {
+              let mut left_mut = left_sibling.borrow_mut();
+              let child_node = RefCell::borrow(&child);
+              let left_len = left_mut.length as usize;
+              let child_len = child_node.length as usize;
+              let node_len_before = RefCell::borrow(node_ref).length as usize;
+              
+              // If child is already empty, just remove it from parent
+              if child_len == 0 {
+                    drop(child_node);
+                    drop(left_mut);
+                    let mut node = node_ref.borrow_mut();
+                    for i in child_idx..node_len_before {
+                        node.children[i] = node.children[i + 1].take();
+                    }
+                    node.children[node_len_before + 1] = None;
+                  node.length -= 1;
+                  return;
+              }
+              
+              unsafe {
+                  left_mut.keys[left_len].write(sep_key);
+                  left_mut.values[left_len].write(sep_val);
+                  for i in 0..child_len {
+                      left_mut.keys[left_len + 1 + i].write(child_node.keys[i].assume_init_read());
+                  }
+                  for i in 0..child_len {
+                      left_mut.values[left_len + 1 + i].write(child_node.values[i].assume_init_read());
+                  }
                 left_mut.length = (left_len + 1 + child_len) as u16;
             }
             if !left_mut.is_leaf() {
@@ -470,27 +509,33 @@ where
         }
 
         // Clear the child's length to prevent double-free on drop
-        child.borrow_mut().length = 0;
 
-        let mut node = node_ref.borrow_mut();
-        let node_len = node.length as usize;
-        unsafe {
-            ptr::copy(
-                node.keys.as_ptr().add(child_idx),
-                node.keys.as_mut_ptr().add(child_idx - 1),
-                node_len - child_idx,
-            );
-            ptr::copy(
-                node.values.as_ptr().add(child_idx),
-                node.values.as_mut_ptr().add(child_idx - 1),
-                node_len - child_idx,
-            );
-        }
-        for i in child_idx..=node_len {
-            node.children[i] = node.children[i + 1].take();
-        }
-        node.length -= 1;
-    }
+          let mut node = node_ref.borrow_mut();
+          let node_len = node.length as usize;
+          unsafe {
+              // Use temporary buffer to avoid Stacked Borrows violation
+              let mut temp_keys: [MaybeUninit<K>; 2 * B] = MaybeUninit::uninit().assume_init();
+              let mut temp_values: [MaybeUninit<V>; 2 * B] = MaybeUninit::uninit().assume_init();
+              for i in 0..(node_len - child_idx) {
+                  temp_keys[i] = MaybeUninit::new(node.keys[child_idx + i].assume_init_read());
+                  temp_values[i] = MaybeUninit::new(node.values[child_idx + i].assume_init_read());
+              }
+              for i in 0..(node_len - child_idx) {
+                  node.keys[child_idx - 1 + i].write(temp_keys[i].assume_init_read());
+                  node.values[child_idx - 1 + i].write(temp_values[i].assume_init_read());
+              }
+          }
+          for i in child_idx..=node_len {
+              node.children[i] = node.children[i + 1].take();
+          }
+          // If we merged the first child, clear the now-empty first child
+          if child_idx == 0 {
+              node.children[0] = None;
+          }
+          // Clear the last child which is now redundant
+          node.children[node_len + 1] = None;
+          node.length -= 1;
+      }
 
     fn merge_with_right(&mut self, node_ref: &Rc<RefCell<Node<K, V>>>, child_idx: usize) {
         let child = RefCell::borrow(node_ref).children[child_idx]
@@ -517,52 +562,50 @@ where
             unsafe {
                 child_mut.keys[child_len].write(sep_key);
                 child_mut.values[child_len].write(sep_val);
-                ptr::copy_nonoverlapping(
-                    right_node.keys.as_ptr(),
-                    child_mut.keys.as_mut_ptr().add(child_len + 1),
-                    right_len,
-                );
-                ptr::copy_nonoverlapping(
-                    right_node.values.as_ptr(),
-                    child_mut.values.as_mut_ptr().add(child_len + 1),
-                    right_len,
-                );
+                  for i in 0..right_len {
+                      child_mut.keys[child_len + 1 + i].write(right_node.keys[i].assume_init_read());
+                  }
+                  for i in 0..right_len {
+                      child_mut.values[child_len + 1 + i].write(right_node.values[i].assume_init_read());
+                  }
                 child_mut.length = (child_len + 1 + right_len) as u16;
             }
             if !child_mut.is_leaf() {
                 unsafe {
-                    ptr::copy_nonoverlapping(
-                        right_node.children.as_ptr(),
-                        child_mut.children.as_mut_ptr().add(child_len + 1),
-                        right_len + 1,
-                    );
+                      for i in 0..=right_len {
+                          child_mut.children[child_len + 1 + i] = right_node.children[i].clone();
+                      }
                 }
-            }
-        }
+              }
+          }
 
-        // Clear the child's length to prevent double-free on drop
-        child.borrow_mut().length = 0;
-
-        let mut node = node_ref.borrow_mut();
-        let node_len = node.length as usize;
-        unsafe {
-            ptr::copy(
-                node.keys.as_ptr().add(child_idx + 1),
-                node.keys.as_mut_ptr().add(child_idx),
-                node_len - child_idx - 1,
-            );
-            ptr::copy(
-                node.values.as_ptr().add(child_idx + 1),
-                node.values.as_mut_ptr().add(child_idx),
-                node_len - child_idx - 1,
-            );
+            let mut node = node_ref.borrow_mut();
+            let node_len = node.length as usize;
+            unsafe {
+              // Use temporary buffer to avoid Stacked Borrows violation
+              let mut temp_keys: [MaybeUninit<K>; 2 * B] = MaybeUninit::uninit().assume_init();
+              let mut temp_values: [MaybeUninit<V>; 2 * B] = MaybeUninit::uninit().assume_init();
+              for i in 0..(node_len - child_idx - 1) {
+                  temp_keys[i] = MaybeUninit::new(node.keys[child_idx + 1 + i].assume_init_read());
+                  temp_values[i] = MaybeUninit::new(node.values[child_idx + 1 + i].assume_init_read());
+              }
+              for i in 0..(node_len - child_idx - 1) {
+                  node.keys[child_idx + i].write(temp_keys[i].assume_init_read());
+                  node.values[child_idx + i].write(temp_values[i].assume_init_read());
+              }
+          }
+          for i in (child_idx + 1)..=node_len {
+              node.children[i] = node.children[i + 1].take();
+          }
+            // Clear the last child which is now redundant
+            node.children[node_len + 1] = None;
+            node.length -= 1;
+            
+            // Clear the right sibling's length to prevent double-free on drop
+            // Do this AFTER the parent's reference is removed to avoid invariant violations
+            right_sibling.borrow_mut().length = 0;
         }
-        for i in (child_idx + 1)..=node_len {
-            node.children[i] = node.children[i + 1].take();
-        }
-        node.length -= 1;
     }
-}
 
 impl<'a, K, V> IntoIterator for &'a BTreeMap<K, V> {
     type Item = (&'a K, &'a V);
