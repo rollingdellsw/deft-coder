@@ -55,14 +55,16 @@ impl<K, V> Node<K, V> {
         let len = self.length as usize;
         unsafe {
             // Shift keys/values right
+            let keys_ptr: *mut MaybeUninit<K> = self.keys.as_mut_ptr();
+            let values_ptr: *mut MaybeUninit<V> = self.values.as_mut_ptr();
             ptr::copy(
-                self.keys.as_ptr().add(idx),
-                self.keys.as_mut_ptr().add(idx + 1),
+                keys_ptr.add(idx) as *const MaybeUninit<K>,
+                keys_ptr.add(idx + 1),
                 len - idx,
             );
             ptr::copy(
-                self.values.as_ptr().add(idx),
-                self.values.as_mut_ptr().add(idx + 1),
+                values_ptr.add(idx) as *const MaybeUninit<V>,
+                values_ptr.add(idx + 1),
                 len - idx,
             );
 
@@ -80,14 +82,16 @@ impl<K, V> Node<K, V> {
             let v = self.values[idx].assume_init_read();
 
             // Shift left
+            let keys_ptr: *mut MaybeUninit<K> = self.keys.as_mut_ptr();
+            let values_ptr: *mut MaybeUninit<V> = self.values.as_mut_ptr();
             ptr::copy(
-                self.keys.as_ptr().add(idx + 1),
-                self.keys.as_mut_ptr().add(idx),
+                keys_ptr.add(idx + 1) as *const MaybeUninit<K>,
+                keys_ptr.add(idx),
                 len - idx - 1,
             );
             ptr::copy(
-                self.values.as_ptr().add(idx + 1),
-                self.values.as_mut_ptr().add(idx),
+                values_ptr.add(idx + 1) as *const MaybeUninit<V>,
+                values_ptr.add(idx),
                 len - idx - 1,
             );
 
