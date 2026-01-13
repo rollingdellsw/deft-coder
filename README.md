@@ -109,10 +109,8 @@ When working with Neovim, select any code, press `<leader>ca`, ask questions or 
 
 Unleash the full power of Deft™ directly in your terminal. Combine the flexibility of the CLI with standard input piping, multi-provider configurations, and Git worktrees for completely isolated, parallel agent execution..
 
-With the full [IDE for LLMs](#ide-for-llms) harness design, it enabled GLM 4.7 model to solve a **HARD** level Rust programming challenge: implementing the core alagorithm for B-Tree Map:
-[![Watch the CLI mode demo](https://img.youtube.com/vi/XwBdbyLwO6w/0.jpg)](https://www.youtube.com/watch?v=XwBdbyLwO6w)
-
-The whole session took about 1 hour, with hundreds tool calls from GLM 4.7, and 4 total attempts. You can review GLM 4.7's result from commit 1c02631240288, and compare it to the reference result from Opus 4.5 in benchmark/rust-btree-map-verified.
+With the full [IDE for LLMs](#ide-for-llms) harness design, it enabled Gemini 3 Flash model to solve a **HARD** level [Rust programming challenge](benchmark/rust-btree-map/PROMPT.md): implementing the core alagorithm for B-Tree Map:
+[![Watch the CLI mode demo](https://img.youtube.com/vi/OIEne2MzWkU/0.jpg)](https://www.youtube.com/watch?v=OIEne2MzWkU)
 
 ---
 
@@ -253,7 +251,7 @@ Options:
 
 ### Supported Providers
 
-OpenRouter (default, with GLM 4.7), Anthropic (Claude), OpenAI (GPT), Google (Gemini via API key or Vertex AI via Application Default Credentials), and more. Can mix any models as planner/executor combinations.
+Gemini (Default, free via [API key](https://aistudio.google.com/app/api-keys) or Vertex AI via Application Default Credentials), OpenRouter (GLM, DeepSeek, xAI, Kimi), Anthropic (Claude), OpenAI (GPT) and more. Can mix any models as planner/executor combinations.
 
 → [Full Configuration Guide](./docs/configuration.md)
 

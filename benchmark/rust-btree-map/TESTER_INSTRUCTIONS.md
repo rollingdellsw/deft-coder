@@ -1,7 +1,7 @@
 Requiremnt:
 
 Need to be able to run
-$ MIRIFLAGS=-Zmiri-backtrace=full cargo miri test --features sanity_test
+$ MIRIFLAGS=-Zmiri-backtrace=full cargo miri test test_interleaved_insert_remove
 
 By install the rustc first:
 $ curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
