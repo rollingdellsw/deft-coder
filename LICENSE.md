@@ -25,7 +25,7 @@ The Licensor grants you a revocable, non-exclusive, non-transferable license to 
 **Use of this Software for professional work, business operations, or on behalf of an employer requires a Commercial License.**
 If you use the Software to write, modify, or debug code for which you are paid, or if the Software is installed on hardware owned or leased by a corporation or business entity, you must purchase a license.
 
-- **To Purchase:** Visit www.rollingdellsw.com.
+- **To Purchase:** Contact us with [email](admin@rollingdellsw.com).
 
 ## 3. COMPONENT LICENSING EXCEPTIONS
 
