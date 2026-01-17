@@ -81,6 +81,24 @@ _\*Score penalized for extreme inefficiency and multiple dead loops despite fina
 - GLM correctly identified the issue but failed on implementation details
 - The benchmark effectively differentiated surface-level vs deep understanding
 
+### 3. D-Bus Thread Safety (Race Condition Debugging)
+
+**Challenge:** Diagnose and fix a complex data race in `libsystemd`'s D-Bus connection handling where a mutex was accessed after destruction during connection teardown.
+
+| Model              | Success | Tests Passed |   Score    | Token Usage |  Time  | Attempts |
+| ------------------ | :-----: | :----------: | :--------: | :---------: | :----: | :------: |
+| **Gemini 3 Flash** |   ✅    |     100%     | **85/100** |    ~800K    | 12 min |    1     |
+| **GLM-4.7**        |   ❌    |      0%      |   0/100    |    ~5M+     | 45 min |    5     |
+
+**Key Findings:**
+
+- **Gemini 3 Flash:** Achieved a functional fix on the first attempt but used a "brute force" architectural approach.
+  - _Strengths:_ Correctly identified the race on reference counters and state variables. Implemented a working mutex wrapper that passed TSan.
+  - _Weaknesses:_ Modified a core project header (`macro.h`) to enforce atomic reference counting globally across the entire project, rather than isolating the change to `sd_bus`. This would likely be rejected in code review for performance impact on unrelated components.
+- **GLM-4.7:** Failed completely across 5 attempts.
+  - Correctly diagnosed sophisticated race conditions (including destruction order and state flags) but suffered from catastrophic tooling failures. It repeatedly truncated source files when attempting to apply patches, leading to linker errors, and entered unrecoverable loops when patch commands failed.
+  - _Outcome:_ It timed out/aborted after consuming significant resources without producing a runnable fix.
+
 ---
 
 ## Current Test Cases
@@ -186,7 +204,6 @@ make test   # For C/C++
 See individual `TESTER_INSTRUCTIONS.md` for details.
 
 ---
-
 
 ## Citation
 
