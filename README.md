@@ -110,7 +110,7 @@ When working with Neovim, select any code, press `<leader>ca`, ask questions or 
 Unleash the full power of Deft™ directly in your terminal. Combine the flexibility of the CLI with standard input piping, multi-provider configurations, and Git worktrees for completely isolated, parallel agent execution..
 
 With the full [IDE for LLMs](#ide-for-llms) harness design, it enabled Gemini 3 Flash model to solve a **HARD** level [Rust programming challenge](benchmark/rust-btree-map/PROMPT.md): implementing the core alagorithm for B-Tree Map:
-[![Watch the CLI mode demo](https://img.youtube.com/vi/OIEne2MzWkU/0.jpg)](https://www.youtube.com/watch?v=OIEne2MzWkU)
+[![Watch the CLI mode demo](https://img.youtube.com/vi/yHW1gD1R53M/0.jpg)](https://youtu.be/yHW1gD1R53M)
 
 ---
 
